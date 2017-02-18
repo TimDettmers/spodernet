@@ -27,6 +27,10 @@ class Vocab(object):
         self.idx2token = idx2token
         self.path = path
 
+    @property
+    def num_embeddings(self):
+        return len(self.token2idx)
+
     def get_idx(self, word):
         '''Gets the idx if it exists, otherwise returns -1.'''
         if word in self.token2idx:
