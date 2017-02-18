@@ -1,0 +1,5 @@
+pytest
+czipfile
+numpy
+h5py
+nltk
