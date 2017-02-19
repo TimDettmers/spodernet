@@ -1,18 +1,37 @@
 import numpy as np
 import torch
 from torch.autograd import Variable
+import time
+import datetime
 
 
 class Batcher(object):
     '''Takes data and creates batches over which one can iterate.'''
 
-    def __init__(self, datasets, batch_size=128, transfer_to_gpu=True):
+    def __init__(self, datasets, batch_size=128, transfer_to_gpu=True,
+            num_print_thresholds=10):
         self.datasets = []
         self.batch_size = batch_size
         self.n = datasets[0].shape[0]
         self.idx = 0
 
+        shuffle_idx = np.arange(self.n)
+        np.random.shuffle(shuffle_idx)
+        for ds in datasets:
+            ds = ds[shuffle_idx]
+
+        self.print_thresholds = np.int32((int(self.n/batch_size)) *
+                np.arange(num_print_thresholds)/float(num_print_thresholds))
+        self.threshold_time = np.zeros(num_print_thresholds)
+
         self.init_datasets(datasets, transfer_to_gpu)
+        self.t0 = time.time()
+        self.num_thresholds = num_print_thresholds
+        self.epoch = 1
+        self.hooks = []
+
+    def add_hook(self, hook):
+        self.hooks.append(hook)
 
     def init_datasets(self, datasets, transfer_to_gpu):
         for ds in datasets:
@@ -33,14 +52,42 @@ class Batcher(object):
         rdm = np.random.RandomState(seed)
         idx = np.arange(self.n)
         rdm.shuffle(idx)
-        for ds in dataset:
+        for ds in self.datasets:
             ds = ds[idx]
 
     def __iter__(self):
         return self
 
+    def print_ETA(self, time_idx):
+        self.threshold_time[time_idx] -=\
+                np.sum(self.threshold_time[:time_idx-1])
+        m = np.mean(self.threshold_time[:time_idx])
+        se = np.std(
+                self.threshold_time[:time_idx])/np.sqrt(np.float64(time_idx+1))
+        togo = self.num_thresholds-time_idx
+        lower = m-(1.96*se)
+        upper = m+(1.96*se)
+        lower_time = datetime.timedelta(seconds=np.round(lower*togo))
+        upper_time = datetime.timedelta(seconds=np.round(upper*togo))
+        mean_time = datetime.timedelta(seconds=np.round(m*togo))
+        print('Epoch ETA: {2}\t95% CI: ({0}, {1})'.format(
+            lower_time, upper_time, mean_time))
+
+    def add_to_hook_histories(self, targets, argmax):
+        for hook in self.hooks:
+            hook.add_to_history(targets, argmax)
+
+
     def next(self):
         if self.idx + 1 < self.batches:
+            if np.sum(self.idx == self.print_thresholds) > 0:
+                time_idx = np.where(self.idx == self.print_thresholds)[0][0]
+                self.threshold_time[time_idx] = time.time()-self.t0
+                if time_idx > 1:
+                    self.print_ETA(time_idx)
+                    for hook in self.hooks:
+                        hook.print_statistic(self.epoch)
+
             batches = []
             for ds in self.datasets:
                 start = self.idx * self.batch_size
@@ -50,6 +97,10 @@ class Batcher(object):
             return batches
         else:
             self.idx = 0
+            self.epoch += 1
+            self.threshold_time *= 0
+            self.t0 = time.time()
+            print('EPOCH: {0}'.format(self.epoch))
             raise StopIteration()
 
 
