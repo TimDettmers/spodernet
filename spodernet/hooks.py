@@ -29,6 +29,7 @@ class AccuracyHook(object):
         if epoch not in self.epoch2errors:
             self.epoch2errors[epoch] = []
         self.epoch2errors[epoch].append([m, lower, upper])
+        del self.current_scores[:]
 
     def accuracy(self, targets, argmax):
         correct = float(torch.sum(targets.data == argmax))

@@ -26,15 +26,15 @@ class DualLSTM(torch.nn.Module):
         #        hidden_dim), requires_grad=True),
         #            Variable(torch.cuda.FloatTensor(layers * num_directions, batch_size,
         #        hidden_dim), requires_grad=True))
-
         self.h01 = Variable(torch.cuda.FloatTensor(layers * num_directions, batch_size,
-                hidden_dim), requires_grad=True)
-        self.h02 = Variable(torch.cuda.FloatTensor(layers * num_directions, batch_size,
-                hidden_dim), requires_grad=True)
+                hidden_dim))
         self.c01 = Variable(torch.cuda.FloatTensor(layers * num_directions, batch_size,
-                hidden_dim), requires_grad=True)
+                hidden_dim))
+
+        self.h02 = Variable(torch.cuda.FloatTensor(layers * num_directions, batch_size,
+                hidden_dim))
         self.c02 = Variable(torch.cuda.FloatTensor(layers * num_directions, batch_size,
-                hidden_dim), requires_grad=True)
+                hidden_dim))
 
     def forward(self, seq1, seq2):
         self.h01.data.zero_()

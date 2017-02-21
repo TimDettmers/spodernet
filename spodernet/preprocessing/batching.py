@@ -9,7 +9,7 @@ class Batcher(object):
     '''Takes data and creates batches over which one can iterate.'''
 
     def __init__(self, datasets, batch_size=128, transfer_to_gpu=True,
-            num_print_thresholds=10):
+            num_print_thresholds=100):
         self.datasets = []
         self.batch_size = batch_size
         self.n = datasets[0].shape[0]
@@ -38,9 +38,11 @@ class Batcher(object):
             dtype = ds.dtype
             if dtype == np.int32 or dtype == np.int64:
                 ds_torch = torch.LongTensor(np.int64(ds))
+            elif dtype == np.float32 or dtype == np.float64:
+                ds_torch = torch.FloatTensor(np.float32(ds))
 
-                if transfer_to_gpu:
-                    ds_torch = ds_torch.cuda()
+            if transfer_to_gpu:
+                ds_torch = ds_torch.cuda()
 
             self.datasets.append(Variable(ds_torch))
 
@@ -93,7 +95,7 @@ class Batcher(object):
                 start = self.idx * self.batch_size
                 end = (self.idx + 1) * self.batch_size
                 batches.append(ds[start:end])
-                self.idx += 1
+            self.idx += 1
             return batches
         else:
             self.idx = 0

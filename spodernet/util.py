@@ -7,8 +7,8 @@ def numpy2hdf(path, data):
     h5file.create_dataset("default", data=data)
 
 
-def hdf2numpy(path):
+def hdf2numpy(path, keyword='default'):
     '''Reads and returns a numpy array for a hdf5 file'''
     h5file = h5py.File(path, 'r')
-    dset = h5file.get('default')
+    dset = h5file.get(keyword)
     return dset[:]
