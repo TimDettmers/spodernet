@@ -8,7 +8,7 @@ import datetime
 class Batcher(object):
     '''Takes data and creates batches over which one can iterate.'''
 
-    def __init__(self, datasets, batch_size=128, transfer_to_gpu=True,
+    def __init__(self, datasets, batch_size=128, transfer_to_gpu=False,
             num_print_thresholds=100):
         self.datasets = []
         self.batch_size = batch_size

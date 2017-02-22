@@ -16,13 +16,13 @@ import torch.nn.functional as F
 class SNLIClassification(torch.nn.Module):
     def __init__(self, datasets, vocab):
         super(SNLIClassification, self).__init__()
-        self.b = Batcher(datasets, batch_size=1024)
+        self.b = Batcher(datasets, batch_size=128)
         input_dim = 256
         hidden_dim = 128
         num_directions = 1
         layers = 1
         self.emb= torch.nn.Embedding(vocab.num_embeddings,
-                input_dim, scale_grad_by_freq=True, padding_idx=-1)
+                input_dim, scale_grad_by_freq=True, padding_idx=0)
         self.projection_to_labels = torch.nn.Linear(layers * 2 * num_directions * hidden_dim, 3)
         self.dual_lstm = DualLSTM(self.b.batch_size,input_dim,
                 hidden_dim,layers=layers,
@@ -54,7 +54,7 @@ class SNLIClassification(torch.nn.Module):
         #output2 = self.proj2(support2)
         #output = torch.cat([output1, output2],1)
         projected = self.projection_to_labels(output)
-        pred = F.softmax(projected)
+        pred = F.log_softmax(projected)
         #print(pred[0:5])
         maxiumum, argmax = torch.topk(pred.data, 1)
         return projected, argmax
@@ -63,14 +63,13 @@ def train_model(self):
     epochs = 5
     hook = AccuracyHook('Train')
     self.b.add_hook(hook)
-    crit = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(self.parameters(), lr=0.001)
     for epoch in range(epochs):
         #self.b.shuffle()
         for inp, sup, t in self.b:
-            #optimizer.zero_grad()
+            optimizer.zero_grad()
             pred, argmax = self.forward_to_output(inp, sup, t)
-            loss = crit(pred, t)
+            loss = F.nll_loss(pred, t)
             loss.backward()
             optimizer.step()
 
@@ -110,7 +109,7 @@ def main():
         ds = ds[idx]
 
     snli = SNLIClassification(datasets, vocab)
-    snli.cuda()
+    #snli.cuda()
     snli.train()
     train_model(snli)
 

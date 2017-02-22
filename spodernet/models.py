@@ -5,7 +5,8 @@ import torch
 
 class DualLSTM(torch.nn.Module):
     def __init__(self, batch_size, input_dim, hidden_dim,
-            dropout=0.0, output_projection_dim=None, layers=1, bidirectional=False):
+            dropout=0.0, output_projection_dim=None, layers=1,
+            bidirectional=False, to_cuda=False):
         super(DualLSTM, self).__init__()
 
         use_bias = True
@@ -26,15 +27,21 @@ class DualLSTM(torch.nn.Module):
         #        hidden_dim), requires_grad=True),
         #            Variable(torch.cuda.FloatTensor(layers * num_directions, batch_size,
         #        hidden_dim), requires_grad=True))
-        self.h01 = Variable(torch.cuda.FloatTensor(layers * num_directions, batch_size,
+        self.h01 = Variable(torch.FloatTensor(layers * num_directions, batch_size,
                 hidden_dim))
-        self.c01 = Variable(torch.cuda.FloatTensor(layers * num_directions, batch_size,
+        self.c01 = Variable(torch.FloatTensor(layers * num_directions, batch_size,
                 hidden_dim))
 
-        self.h02 = Variable(torch.cuda.FloatTensor(layers * num_directions, batch_size,
+        self.h02 = Variable(torch.FloatTensor(layers * num_directions, batch_size,
                 hidden_dim))
-        self.c02 = Variable(torch.cuda.FloatTensor(layers * num_directions, batch_size,
+        self.c02 = Variable(torch.FloatTensor(layers * num_directions, batch_size,
                 hidden_dim))
+
+        if to_cuda:
+            self.h01 = self.h01.cuda()
+            self.c01 = self.c01.cuda()
+            self.h02 = self.h02.cuda()
+            self.c02 = self.c02.cuda()
 
     def forward(self, seq1, seq2):
         self.h01.data.zero_()
