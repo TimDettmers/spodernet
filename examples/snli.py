@@ -17,6 +17,8 @@ class SNLIClassification(torch.nn.Module):
     def __init__(self, datasets, vocab):
         super(SNLIClassification, self).__init__()
         self.b = Batcher(datasets, batch_size=128)
+        i, s, t = self.b.datasets
+        print(s.size())
         input_dim = 256
         hidden_dim = 128
         num_directions = 1
@@ -30,8 +32,8 @@ class SNLIClassification(torch.nn.Module):
         self.init_weights()
 
         #print(i.size(1), input_dim)
-        #self.proj1 = torch.nn.Linear(i.size(1)*input_dim, hidden_dim)
-        #self.proj2 = torch.nn.Linear(s.size(1)*input_dim, hidden_dim)
+        self.proj1 = torch.nn.Linear(i.size(1)*input_dim, hidden_dim)
+        self.proj2 = torch.nn.Linear(s.size(1)*input_dim, hidden_dim)
 
     def init_weights(self):
         initrange = 0.1
@@ -41,52 +43,52 @@ class SNLIClassification(torch.nn.Module):
     def forward_to_output(self, input_seq, support_seq, targets):
         inputs = self.emb(input_seq)
         support = self.emb(support_seq)
-        out1, out2 = self.dual_lstm(inputs, support)
+        #out1, out2 = self.dual_lstm(inputs, support)
         #out1 = torch.transpose(out1,1,0).resize(self.b.batch_size,4*256)
         #out2 = torch.transpose(out2,1,0).resize(self.b.batch_size,4*256)
         #out1 = out1.view(self.b.batch_size,-1)
         #out2 = out2.view(self.b.batch_size,-1)
         #output = torch.cat([out1, out2],1)
-        output = torch.cat([out1[0], out2[0]],1)
-        #inputs2 = inputs.view(-1, inputs.size(1) * inputs.size(2))
-        #support2 = support.view(-1, support.size(1) * support.size(2))
-        #output1 = self.proj1(inputs2)
-        #output2 = self.proj2(support2)
-        #output = torch.cat([output1, output2],1)
+        #output = torch.cat([out1[0], out2[0]],1)
+        inputs2 = inputs.view(-1, inputs.size(1) * inputs.size(2))
+        support2 = support.view(-1, support.size(1) * support.size(2))
+        output1 = self.proj1(inputs2)
+        output2 = self.proj2(support2)
+        output = torch.cat([output1, output2],1)
         projected = self.projection_to_labels(output)
+        #print(output)
         pred = F.log_softmax(projected)
         #print(pred[0:5])
-        maxiumum, argmax = torch.topk(pred.data, 1)
-        return projected, argmax
+        return pred
 
 def train_model(self):
     epochs = 5
     hook = AccuracyHook('Train')
     self.b.add_hook(hook)
-    optimizer = torch.optim.Adam(self.parameters(), lr=0.001)
+    optimizer = torch.optim.Adam(self.parameters(), lr=0.0001)
     for epoch in range(epochs):
-        #self.b.shuffle()
         for inp, sup, t in self.b:
             optimizer.zero_grad()
-            pred, argmax = self.forward_to_output(inp, sup, t)
+            pred = self.forward_to_output(inp, sup, t)
+            #print(pred)
             loss = F.nll_loss(pred, t)
             loss.backward()
             optimizer.step()
-
-
+            maxiumum, argmax = torch.topk(pred.data, 1)
             self.b.add_to_hook_histories(t, argmax)
 
-
-def print_data():
+def print_data(datasets, vocab, num=100):
     inp, sup, t = datasets
-    for row in range(10):
+    for row in range(num):
         hypo = ''
         premise = ''
         for idx in inp[row]:
+            if idx == 0: continue
             premise += vocab.get_word(idx) + ' '
         for idx in sup[row]:
+            if idx == 0: continue
             hypo += vocab.get_word(idx) + ' '
-        print([premise, hypo, t[row]])
+        print([premise, hypo, vocab.idx2label[t[row]]])
 
 def main():
     # load data
@@ -105,11 +107,17 @@ def main():
     idx = np.arange(datasets[0].shape[0])
     print(idx.shape)
     rdm.shuffle(idx)
+    datasets2 = []
     for ds in datasets:
+        print(idx)
+        datasets2.append(ds[idx])
         ds = ds[idx]
 
-    snli = SNLIClassification(datasets, vocab)
-    #snli.cuda()
+    print_data(datasets, vocab)
+    print_data(datasets2, vocab)
+    print(type(datasets[0]))
+    snli = SNLIClassification(datasets2, vocab)
+    snli.cuda()
     snli.train()
     train_model(snli)
 

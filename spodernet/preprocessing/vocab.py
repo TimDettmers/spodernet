@@ -26,6 +26,8 @@ class Vocab(object):
         self.token2idx = token2idx
         self.idx2token = idx2token
         self.path = path
+        self.label2idx = None
+        self.idx2label = None
 
     @property
     def num_embeddings(self):
@@ -47,9 +49,10 @@ class Vocab(object):
 
     def save_to_disk(self):
         print('Saving vocab to: {0}'.format(self.path))
-        pickle.dump([self.token2idx, self.idx2token], open(self.path, 'wb'),
+        pickle.dump([self.token2idx, self.idx2token, self.label2idx,
+            self.idx2label], open(self.path, 'wb'),
                     pickle.HIGHEST_PROTOCOL)
 
     def load_from_disk(self):
         print('Loading vocab from: {0}'.format(self.path))
-        self.token2idx, self.idx2token = pickle.load(open(self.path))
+        self.token2idx, self.idx2token, self.label2idx, self.idx2label = pickle.load(open(self.path))

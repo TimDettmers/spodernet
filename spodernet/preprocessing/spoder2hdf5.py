@@ -16,12 +16,14 @@ data_dir = os.path.join(os.environ['HOME'], '.data')
 if not os.path.exists(data_dir):
     os.mkdir(data_dir)
 
-def generate_label2idx(label_set):
+def generate_label_idx_maps(label_set):
     '''Maps labels as string to an index; returns label2idx hashtable'''
     label2idx = {}
+    idx2label = {}
     for i, word in enumerate(label_set):
         label2idx[word] = i
-    return label2idx
+        idx2label[i] = word
+    return label2idx, idx2label
 
 
 def not_implemented(filetype):
@@ -42,7 +44,9 @@ def tokenize_file(paths, lower_list=None, add_to_vocab_list=None,
     not_implemented(filetype)
     tokenizer = nltk.tokenize.WordPunctTokenizer()
     vocab_counter = Counter()
-    target_set = set()
+    target2idx = {}
+    idx2target = {}
+    target_idx = 0
     max_length_input = 0
     max_length_support = 0
     input_datasets = []
@@ -61,7 +65,10 @@ def tokenize_file(paths, lower_list=None, add_to_vocab_list=None,
             inp, support, target = json.loads(line)
             if filetype == SINGLE_INPUT_SINGLE_SUPPORT_CLASSIFICATION:
                 # our targets are just labels
-                target_set.add(target)
+                if target not in target_map:
+                    target2idx[target] = target_idx
+                    idx2target[idx] = target
+                    target_idx += 1
                 targets.append(target)
 
                 # tokenize the sentences
@@ -85,6 +92,8 @@ def tokenize_file(paths, lower_list=None, add_to_vocab_list=None,
 
     vocab_path = os.path.join(os.path.dirname(paths[0]), 'vocab.p')
     vocab = Vocab(vocab_counter, vocab_path)
+    vocab.idx2label = idx2target
+    vocab.label2idx = label2idx
     vocab.save_to_disk()
     return [input_datasets, support_datasets, target_datasets, target_set,
             max_length_input, max_length_support,
@@ -120,7 +129,6 @@ def file2hdf(paths, names, lower_list=None, add_to_vocab_list=None,
 
     ret = tokenize_file(paths, lower_list, add_to_vocab_list, filetype)
     input_sets, support_sets, target_sets, labels, length_inp, length_support, vocab = ret
-    label2idx = generate_label2idx(labels)
 
     for path, name, inputs, supports, targets in zip(paths, names,
                                             input_sets, support_sets,
@@ -143,7 +151,7 @@ def file2hdf(paths, names, lower_list=None, add_to_vocab_list=None,
                 idx = vocab.get_idx(word)
                 S[row, col] = idx
 
-            T[row] = label2idx[label]
+            T[row] = vocab.label2idx[label]
 
         write_path = os.path.join(os.path.dirname(path), name)
         numpy2hdf(write_path + '_inputs.hdf5', X)
