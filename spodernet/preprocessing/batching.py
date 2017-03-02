@@ -9,7 +9,7 @@ class Batcher(object):
     '''Takes data and creates batches over which one can iterate.'''
 
     def __init__(self, datasets, batch_size=128, transfer_to_gpu=True,
-            num_print_thresholds=100):
+            num_print_thresholds=1000):
         self.datasets = []
         self.batch_size = batch_size
         self.n = datasets[0].shape[0]

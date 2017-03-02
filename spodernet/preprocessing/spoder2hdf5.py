@@ -65,9 +65,9 @@ def tokenize_file(paths, lower_list=None, add_to_vocab_list=None,
             inp, support, target = json.loads(line)
             if filetype == SINGLE_INPUT_SINGLE_SUPPORT_CLASSIFICATION:
                 # our targets are just labels
-                if target not in target_map:
+                if target not in target2idx:
                     target2idx[target] = target_idx
-                    idx2target[idx] = target
+                    idx2target[target_idx] = target
                     target_idx += 1
                 targets.append(target)
 
@@ -93,9 +93,9 @@ def tokenize_file(paths, lower_list=None, add_to_vocab_list=None,
     vocab_path = os.path.join(os.path.dirname(paths[0]), 'vocab.p')
     vocab = Vocab(vocab_counter, vocab_path)
     vocab.idx2label = idx2target
-    vocab.label2idx = label2idx
+    vocab.label2idx = target2idx
     vocab.save_to_disk()
-    return [input_datasets, support_datasets, target_datasets, target_set,
+    return [input_datasets, support_datasets, target_datasets,
             max_length_input, max_length_support,
             vocab]
 
@@ -128,7 +128,7 @@ def file2hdf(paths, names, lower_list=None, add_to_vocab_list=None,
         return [return_file_names, vocab]
 
     ret = tokenize_file(paths, lower_list, add_to_vocab_list, filetype)
-    input_sets, support_sets, target_sets, labels, length_inp, length_support, vocab = ret
+    input_sets, support_sets, target_sets, length_inp, length_support, vocab = ret
 
     for path, name, inputs, supports, targets in zip(paths, names,
                                             input_sets, support_sets,

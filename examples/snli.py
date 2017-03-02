@@ -14,9 +14,9 @@ from torch.autograd import Variable
 import torch.nn.functional as F
 
 class SNLIClassification(torch.nn.Module):
-    def __init__(self, datasets, vocab):
+    def __init__(self, datasets, vocab, use_cuda=False):
         super(SNLIClassification, self).__init__()
-        self.b = Batcher(datasets, batch_size=128)
+        self.b = Batcher(datasets, batch_size=128, transfer_to_gpu=use_cuda)
         i, s, t = self.b.datasets
         print(s.size())
         input_dim = 256
@@ -28,7 +28,7 @@ class SNLIClassification(torch.nn.Module):
         self.projection_to_labels = torch.nn.Linear(layers * 2 * num_directions * hidden_dim, 3)
         self.dual_lstm = DualLSTM(self.b.batch_size,input_dim,
                 hidden_dim,layers=layers,
-                bidirectional=False)
+                bidirectional=False,to_cuda=use_cuda )
         self.init_weights()
 
         #print(i.size(1), input_dim)
@@ -43,7 +43,8 @@ class SNLIClassification(torch.nn.Module):
     def forward_to_output(self, input_seq, support_seq, targets):
         inputs = self.emb(input_seq)
         support = self.emb(support_seq)
-        #out1, out2 = self.dual_lstm(inputs, support)
+        #(out1, out2), (h1, h2) = self.dual_lstm(inputs, support)
+
         #out1 = torch.transpose(out1,1,0).resize(self.b.batch_size,4*256)
         #out2 = torch.transpose(out2,1,0).resize(self.b.batch_size,4*256)
         #out1 = out1.view(self.b.batch_size,-1)
@@ -105,19 +106,16 @@ def main():
     datasets = [hdf2numpy(X), hdf2numpy(S), hdf2numpy(T)]
     rdm = np.random.RandomState(23435)
     idx = np.arange(datasets[0].shape[0])
-    print(idx.shape)
     rdm.shuffle(idx)
     datasets2 = []
     for ds in datasets:
-        print(idx)
         datasets2.append(ds[idx])
         ds = ds[idx]
 
-    print_data(datasets, vocab)
-    print_data(datasets2, vocab)
-    print(type(datasets[0]))
+    #print_data(datasets, vocab)
+    #print_data(datasets2, vocab)
+    #print(type(datasets[0]))
     snli = SNLIClassification(datasets2, vocab)
-    snli.cuda()
     snli.train()
     train_model(snli)
 
