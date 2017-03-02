@@ -52,11 +52,15 @@ def tokenize_file(paths, lower_list=None, add_to_vocab_list=None,
     input_datasets = []
     support_datasets = []
     target_datasets = []
+    input_length_ds = []
+    support_length_ds = []
     for path, lower, add_vocab in zip(paths, lower_list, add_to_vocab_list):
         print('Tokenizing file {0}'.format(path))
         inputs = []
         supports = []
         targets = []
+        input_lengths = []
+        support_lengths = []
         for line in open(path):
             if lower:
                 line = line.lower()
@@ -76,6 +80,10 @@ def tokenize_file(paths, lower_list=None, add_to_vocab_list=None,
                 support_tokenized = tokenizer.tokenize(support)
                 inputs.append(inp_tokenized)
                 supports.append(support_tokenized)
+                # add lengths
+                input_lengths.append(len(inp_tokenized))
+                support_lengths.append(len(support_tokenized))
+
                 if len(inp_tokenized) > max_length_input:
                     max_length_input = len(inp_tokenized)
 
@@ -89,6 +97,8 @@ def tokenize_file(paths, lower_list=None, add_to_vocab_list=None,
         input_datasets.append(inputs)
         support_datasets.append(supports)
         target_datasets.append(targets)
+        support_length_ds.append(support_lengths)
+        input_length_ds.append(input_lengths)
 
     vocab_path = os.path.join(os.path.dirname(paths[0]), 'vocab.p')
     vocab = Vocab(vocab_counter, vocab_path)
@@ -96,6 +106,7 @@ def tokenize_file(paths, lower_list=None, add_to_vocab_list=None,
     vocab.label2idx = target2idx
     vocab.save_to_disk()
     return [input_datasets, support_datasets, target_datasets,
+            input_length_ds, support_length_ds,
             max_length_input, max_length_support,
             vocab]
 
@@ -118,6 +129,8 @@ def file2hdf(paths, names, lower_list=None, add_to_vocab_list=None,
 
     return_file_names = [(write_path + '_inputs.hdf5',
                           write_path + '_support.hdf5',
+                          write_path + '_input_lengths.hdf5',
+                          write_path + '_support_lengths.hdf5',
                           write_path + '_targets.hdf5')
                          for write_path in write_paths]
 
@@ -128,11 +141,12 @@ def file2hdf(paths, names, lower_list=None, add_to_vocab_list=None,
         return [return_file_names, vocab]
 
     ret = tokenize_file(paths, lower_list, add_to_vocab_list, filetype)
-    input_sets, support_sets, target_sets, length_inp, length_support, vocab = ret
+    input_sets, support_sets, target_sets, input_len_sets, support_len_sets, length_inp, length_support, vocab = ret
 
-    for path, name, inputs, supports, targets in zip(paths, names,
+    for path, name, inputs, supports, input_lens, support_lens, targets in zip(paths, names,
                                             input_sets, support_sets,
-                                            target_sets):
+                                            input_len_sets, support_len_sets, 
+                                            target_sets,):
         assert len(inputs) == len(supports), ('Number of supports and inputs',
                                               'must be the same')
         assert len(inputs) == len(targets), ('Number of targets and inputs',
@@ -141,6 +155,8 @@ def file2hdf(paths, names, lower_list=None, add_to_vocab_list=None,
         X = np.zeros((len(inputs), length_inp), dtype=np.int32)
         S = np.zeros((len(supports), length_support), dtype=np.int32)
         T = np.zeros((len(targets),), dtype=np.int32)
+        Xs = np.zeros((len(input_lens),), dtype=np.int32)
+        Sups = np.zeros((len(support_lens),), dtype=np.int32)
 
         for row, (inp, sup, label) in enumerate(zip(inputs, supports, targets)):
             for col, word in enumerate(inp):
@@ -152,10 +168,14 @@ def file2hdf(paths, names, lower_list=None, add_to_vocab_list=None,
                 S[row, col] = idx
 
             T[row] = vocab.label2idx[label]
+            Xs[row] = input_lens[row]
+            Sups[row] = support_lens[row]
 
         write_path = os.path.join(os.path.dirname(path), name)
         numpy2hdf(write_path + '_inputs.hdf5', X)
         numpy2hdf(write_path + '_support.hdf5', S)
+        numpy2hdf(write_path + '_input_lengths.hdf5', Xs)
+        numpy2hdf(write_path + '_support_lengths.hdf5', Sups)
         numpy2hdf(write_path + '_targets.hdf5', T)
 
     return [return_file_names, vocab]

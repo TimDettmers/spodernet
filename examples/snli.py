@@ -16,8 +16,8 @@ import torch.nn.functional as F
 class SNLIClassification(torch.nn.Module):
     def __init__(self, datasets, vocab, use_cuda=False):
         super(SNLIClassification, self).__init__()
-        self.b = Batcher(datasets, batch_size=128, transfer_to_gpu=use_cuda)
-        i, s, t = self.b.datasets
+        self.b = Batcher(datasets, batch_size=128, transfer_to_gpu=use_cuda, num_print_thresholds=100)
+        i, s, _, _, t = self.b.datasets
         print(s.size())
         input_dim = 256
         hidden_dim = 128
@@ -34,16 +34,34 @@ class SNLIClassification(torch.nn.Module):
         #print(i.size(1), input_dim)
         self.proj1 = torch.nn.Linear(i.size(1)*input_dim, hidden_dim)
         self.proj2 = torch.nn.Linear(s.size(1)*input_dim, hidden_dim)
+        self.b1 = None
+        self.b2 = None
 
     def init_weights(self):
         initrange = 0.1
         self.emb.weight.data.uniform_(-initrange, initrange)
         self.projection_to_labels.weight.data.uniform_(-initrange, initrange)
 
-    def forward_to_output(self, input_seq, support_seq, targets):
+    def forward_to_output(self, input_seq, support_seq, inp_len, sup_len, targets):
         inputs = self.emb(input_seq)
         support = self.emb(support_seq)
-        #(out1, out2), (h1, h2) = self.dual_lstm(inputs, support)
+        (out_all1, out_all2), (h1, h2) = self.dual_lstm(inputs, support)
+        if self.b1 == None:
+            b1 = torch.ByteTensor(out_all1.size())
+            b2 = torch.ByteTensor(out_all2.size())
+        #out1 = torch.index_select(out_all1,1,inp_len)
+        #out2 = torch.index_select(out_all2,1,sup_len)
+        b1.fill_(0)
+        for i, num in enumerate(inp_len.data):
+            b1[i,num,:] = 1
+        out1 = out_all1[b1].view(self.b.batch_size,-1)
+
+        b2.fill_(0)
+        for i, num in enumerate(sup_len.data):
+            b2[i,num,:] = 1
+        out2 = out_all2[b2].view(self.b.batch_size,-1)
+
+        out = torch.cat([out1,out2],1)
 
         #out1 = torch.transpose(out1,1,0).resize(self.b.batch_size,4*256)
         #out2 = torch.transpose(out2,1,0).resize(self.b.batch_size,4*256)
@@ -51,12 +69,7 @@ class SNLIClassification(torch.nn.Module):
         #out2 = out2.view(self.b.batch_size,-1)
         #output = torch.cat([out1, out2],1)
         #output = torch.cat([out1[0], out2[0]],1)
-        inputs2 = inputs.view(-1, inputs.size(1) * inputs.size(2))
-        support2 = support.view(-1, support.size(1) * support.size(2))
-        output1 = self.proj1(inputs2)
-        output2 = self.proj2(support2)
-        output = torch.cat([output1, output2],1)
-        projected = self.projection_to_labels(output)
+        projected = self.projection_to_labels(out)
         #print(output)
         pred = F.log_softmax(projected)
         #print(pred[0:5])
@@ -68,11 +81,12 @@ def train_model(self):
     self.b.add_hook(hook)
     optimizer = torch.optim.Adam(self.parameters(), lr=0.0001)
     for epoch in range(epochs):
-        for inp, sup, t in self.b:
+        for inp, sup, inp_len, sup_len, t in self.b:
             optimizer.zero_grad()
-            pred = self.forward_to_output(inp, sup, t)
+            pred = self.forward_to_output(inp, sup, inp_len, sup_len, t)
             #print(pred)
             loss = F.nll_loss(pred, t)
+            #print(loss)
             loss.backward()
             optimizer.step()
             maxiumum, argmax = torch.topk(pred.data, 1)
@@ -102,8 +116,8 @@ def main():
     hdf5paths, vocab = spoder2hdf5.file2hdf(
         file_paths, names, lower_list, add_to_vocab_list, filetype)
 
-    X, S, T = hdf5paths[0]
-    datasets = [hdf2numpy(X), hdf2numpy(S), hdf2numpy(T)]
+    X, S, X_len, S_len, T = hdf5paths[0]
+    datasets = [hdf2numpy(X), hdf2numpy(S), hdf2numpy(X_len), hdf2numpy(S_len), hdf2numpy(T)]
     rdm = np.random.RandomState(23435)
     idx = np.arange(datasets[0].shape[0])
     rdm.shuffle(idx)
