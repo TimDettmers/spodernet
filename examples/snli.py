@@ -36,6 +36,7 @@ class SNLIClassification(torch.nn.Module):
         self.proj2 = torch.nn.Linear(s.size(1)*input_dim, hidden_dim)
         self.b1 = None
         self.b2 = None
+        self.use_cuda = use_cuda
 
     def init_weights(self):
         initrange = 0.1
@@ -49,16 +50,19 @@ class SNLIClassification(torch.nn.Module):
         if self.b1 == None:
             b1 = torch.ByteTensor(out_all1.size())
             b2 = torch.ByteTensor(out_all2.size())
+            if self.use_cuda:
+                b1 = b1.cuda()
+                b2 = b2.cuda()
         #out1 = torch.index_select(out_all1,1,inp_len)
         #out2 = torch.index_select(out_all2,1,sup_len)
         b1.fill_(0)
         for i, num in enumerate(inp_len.data):
-            b1[i,num,:] = 1
+            b1[i,num-1,:] = 1
         out1 = out_all1[b1].view(self.b.batch_size,-1)
 
         b2.fill_(0)
         for i, num in enumerate(sup_len.data):
-            b2[i,num,:] = 1
+            b2[i,num-1,:] = 1
         out2 = out_all2[b2].view(self.b.batch_size,-1)
 
         out = torch.cat([out1,out2],1)
@@ -122,14 +126,15 @@ def main():
     idx = np.arange(datasets[0].shape[0])
     rdm.shuffle(idx)
     datasets2 = []
+    k = 2000
     for ds in datasets:
-        datasets2.append(ds[idx])
-        ds = ds[idx]
+        datasets2.append(ds[idx][:k])
 
     #print_data(datasets, vocab)
     #print_data(datasets2, vocab)
     #print(type(datasets[0]))
-    snli = SNLIClassification(datasets2, vocab)
+    snli = SNLIClassification(datasets2, vocab, use_cuda=True)
+    snli.cuda()
     snli.train()
     train_model(snli)
 
