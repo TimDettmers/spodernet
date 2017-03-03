@@ -9,16 +9,16 @@ class Batcher(object):
     '''Takes data and creates batches over which one can iterate.'''
 
     def __init__(self, datasets, batch_size=128, transfer_to_gpu=True,
-            num_print_thresholds=1000):
+            num_print_thresholds=1000, sort_idx_seq_pairs=None):
         self.datasets = []
         self.batch_size = batch_size
         self.n = datasets[0].shape[0]
         self.idx = 0
 
-        shuffle_idx = np.arange(self.n)
-        np.random.shuffle(shuffle_idx)
-        for ds in datasets:
-            ds = ds[shuffle_idx]
+        #shuffle_idx = np.arange(self.n)
+        #np.random.shuffle(shuffle_idx)
+        #for ds in datasets:
+        #    ds = ds[shuffle_idx]
 
         self.print_thresholds = np.int32((int(self.n/batch_size)) *
                 np.arange(num_print_thresholds)/float(num_print_thresholds))
@@ -29,6 +29,7 @@ class Batcher(object):
         self.num_thresholds = num_print_thresholds
         self.epoch = 1
         self.hooks = []
+        self.sort_idx_seq_pairs = sort_idx_seq_pairs
 
     def add_hook(self, hook):
         self.hooks.append(hook)
@@ -44,7 +45,7 @@ class Batcher(object):
             if transfer_to_gpu:
                 ds_torch = ds_torch.cuda()
 
-            self.datasets.append(Variable(ds_torch))
+            self.datasets.append(ds_torch)
 
 
         # we ignore off-size batches
@@ -75,9 +76,9 @@ class Batcher(object):
         print('Epoch ETA: {2}\t95% CI: ({0}, {1})'.format(
             lower_time, upper_time, mean_time))
 
-    def add_to_hook_histories(self, targets, argmax):
+    def add_to_hook_histories(self, targets, argmax, loss):
         for hook in self.hooks:
-            hook.add_to_history(targets, argmax)
+            hook.add_to_history(targets, argmax, loss)
 
 
     def next(self):
@@ -96,6 +97,17 @@ class Batcher(object):
                 end = (self.idx + 1) * self.batch_size
                 batches.append(ds[start:end])
             self.idx += 1
+
+            if self.sort_idx_seq_pairs != None:
+                for (idx_sort, idx_seq) in self.sort_idx_seq_pairs:
+                    idx_sorted, idx_argsorted = batches[idx_sort].sort(0, descending=True)
+                    batches[idx_sort] = idx_sorted
+                    batches[idx_seq]= batches[idx_seq][idx_sorted]
+
+
+            for i in range(len(batches)):
+                batches[i] = Variable(batches[i])
+
             return batches
         else:
             self.idx = 0

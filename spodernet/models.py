@@ -49,6 +49,6 @@ class DualLSTM(torch.nn.Module):
         self.c01.data.zero_()
         self.h02.data.zero_()
         self.c02.data.zero_()
-        out1, (h1_n, c1_n) = self.lstm1(seq1, (self.h01, self.c01))
-        out2, (h2_n, c2_n) = self.lstm2(seq2, (self.h02, self.c02))
-        return [(out1, out2), (h1_n, h2_n)] 
+        out1, hid1 = self.lstm1(seq1, (self.h01, self.c01))
+        out2, hid2 = self.lstm2(seq2, (self.h02, self.c02))
+        return [(out1, out2), (hid1, hid2)]

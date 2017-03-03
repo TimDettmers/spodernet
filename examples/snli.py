@@ -5,31 +5,32 @@ from spodernet.data.snli2spoder import snli2spoder
 from spodernet.preprocessing import spoder2hdf5
 from spodernet.util import hdf2numpy
 from spodernet.preprocessing.batching import Batcher
-from spodernet.hooks import AccuracyHook
+from spodernet.hooks import AccuracyHook, LossHook
 from spodernet.models import DualLSTM
 
 import torch
 import numpy as np
 from torch.autograd import Variable
 import torch.nn.functional as F
+import torch.nn.utils.rnn as rnn_utils
 
 class SNLIClassification(torch.nn.Module):
     def __init__(self, datasets, vocab, use_cuda=False):
         super(SNLIClassification, self).__init__()
-        self.b = Batcher(datasets, batch_size=128, transfer_to_gpu=use_cuda, num_print_thresholds=100)
+        self.b = Batcher(datasets, batch_size=128, transfer_to_gpu=use_cuda, num_print_thresholds=100)#, sort_idx_seq_pairs=[(2,0),(3,1)])
         i, s, _, _, t = self.b.datasets
         print(s.size())
         input_dim = 256
         hidden_dim = 128
-        num_directions = 1
+        num_directions = 2
         layers = 1
         self.emb= torch.nn.Embedding(vocab.num_embeddings,
-                input_dim, scale_grad_by_freq=True, padding_idx=0)
+                input_dim, padding_idx=0)#, scale_grad_by_freq=True, padding_idx=0)
         self.projection_to_labels = torch.nn.Linear(layers * 2 * num_directions * hidden_dim, 3)
         self.dual_lstm = DualLSTM(self.b.batch_size,input_dim,
                 hidden_dim,layers=layers,
-                bidirectional=False,to_cuda=use_cuda )
-        self.init_weights()
+                bidirectional=True,to_cuda=use_cuda )
+        #self.init_weights()
 
         #print(i.size(1), input_dim)
         self.proj1 = torch.nn.Linear(i.size(1)*input_dim, hidden_dim)
@@ -46,7 +47,13 @@ class SNLIClassification(torch.nn.Module):
     def forward_to_output(self, input_seq, support_seq, inp_len, sup_len, targets):
         inputs = self.emb(input_seq)
         support = self.emb(support_seq)
+        #inputs_packed = rnn_utils.pack_padded_sequence(inputs, inp_len.data.tolist(), True)
+        #support_packed = rnn_utils.pack_padded_sequence(support, sup_len.data.tolist(), True)
+        #(out_all1_packed, out_all2_packed), (h1, h2) = self.dual_lstm(inputs_packed, support_packed)
+        #out_all1, lengths = rnn_utils.pad_packed_sequence(out_all1_packed, True)
+        #out_all2, lengths = rnn_utils.pad_packed_sequence(out_all2_packed, True)
         (out_all1, out_all2), (h1, h2) = self.dual_lstm(inputs, support)
+
         if self.b1 == None:
             b1 = torch.ByteTensor(out_all1.size())
             b2 = torch.ByteTensor(out_all2.size())
@@ -80,10 +87,11 @@ class SNLIClassification(torch.nn.Module):
         return pred
 
 def train_model(self):
-    epochs = 5
+    epochs = 2
     hook = AccuracyHook('Train')
     self.b.add_hook(hook)
-    optimizer = torch.optim.Adam(self.parameters(), lr=0.0001)
+    self.b.add_hook(LossHook('Train'))
+    optimizer = torch.optim.Adam(self.parameters(), lr=0.001)
     for epoch in range(epochs):
         for inp, sup, inp_len, sup_len, t in self.b:
             optimizer.zero_grad()
@@ -94,7 +102,7 @@ def train_model(self):
             loss.backward()
             optimizer.step()
             maxiumum, argmax = torch.topk(pred.data, 1)
-            self.b.add_to_hook_histories(t, argmax)
+            self.b.add_to_hook_histories(t, argmax, loss)
 
 def print_data(datasets, vocab, num=100):
     inp, sup, t = datasets
@@ -122,14 +130,56 @@ def main():
 
     X, S, X_len, S_len, T = hdf5paths[0]
     datasets = [hdf2numpy(X), hdf2numpy(S), hdf2numpy(X_len), hdf2numpy(S_len), hdf2numpy(T)]
-    rdm = np.random.RandomState(23435)
-    idx = np.arange(datasets[0].shape[0])
-    rdm.shuffle(idx)
+    l1 = torch.LongTensor(np.int64(datasets[2]))
+    l2 = torch.LongTensor(np.int64(datasets[3]))
+    _, idx = l1.sort(0,descending=True)
+    x1 = datasets[2][idx.numpy()]
+    x2 = datasets[3][idx.numpy()]
+    previ = 10000
+
+    previ = 10000
+    prevj = 10000
+    exceptions = []
+    good_idx = []
+    for it, (i, j) in enumerate(zip(x1, x2)):
+        if j > previ or i > previ or j > prevj or i > prevj:
+            print(it, i, j, previ)
+            exceptions.append(j)
+        else:
+            good_idx.append(it)
+        previ = i
+        prevj = j
+
+    print(len(exceptions), 1)
+    idx = idx.numpy()[np.array(good_idx)]
+
+    x1 = datasets[2][idx]
+    x2 = datasets[3][idx]
+    previ = 10000
+    prevj = 10000
+    exceptions = []
+    good_idx = []
+    for it, (i, j) in enumerate(zip(x1, x2)):
+        if j > previ or i > previ or j > prevj or i > prevj:
+            print(it, i, j, previ)
+            exceptions.append(j)
+        else:
+            good_idx.append(it)
+        previ = i
+        prevj = j
+    print(len(exceptions), 2)
+    print(x1[:100])
+    print(x2[:100])
+
+
     datasets2 = []
     k = 2000
     for ds in datasets:
-        datasets2.append(ds[idx][:k])
+        #datasets2.append(ds[idx][:k])
+        datasets2.append(ds[idx])
 
+    print(datasets2[2][0:100])
+    print(datasets2[3][0:100])
     #print_data(datasets, vocab)
     #print_data(datasets2, vocab)
     #print(type(datasets[0]))
