@@ -204,11 +204,11 @@ class Batcher(object):
 
             return batch
         else:
+            for hook in self.hooks:
+                hook.print_statistic(self.epoch)
             self.idx = 0
             self.epoch += 1
             self.threshold_time *= 0
             self.t0 = time.time()
             print('EPOCH: {0}'.format(self.epoch))
             raise StopIteration()
-
-

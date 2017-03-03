@@ -15,18 +15,19 @@ import torch.nn.functional as F
 from scipy.stats.mstats import normaltest
 #import torch.nn.utils.rnn as rnn_utils
 np.set_printoptions(suppress=True)
+import time
 
 class SNLIClassification(torch.nn.Module):
     def __init__(self, batch_size, vocab, use_cuda=False):
         super(SNLIClassification, self).__init__()
         self.batch_size = batch_size 
         input_dim = 256
-        hidden_dim = 128
+        hidden_dim = 512
         num_directions = 2
-        layers = 1
+        layers = 2
         self.emb= torch.nn.Embedding(vocab.num_embeddings,
                 input_dim, padding_idx=0)#, scale_grad_by_freq=True, padding_idx=0)
-        self.projection_to_labels = torch.nn.Linear(layers * 2 * num_directions * hidden_dim, 3)
+        self.projection_to_labels = torch.nn.Linear(2 * num_directions * hidden_dim, 3)
         self.dual_lstm = DualLSTM(self.batch_size,input_dim,
                 hidden_dim,layers=layers,
                 bidirectional=True,to_cuda=use_cuda )
@@ -85,16 +86,16 @@ class SNLIClassification(torch.nn.Module):
         return pred
 
 def train_model(model, train_batcher, dev_batcher):
-    epochs = 2
+    epochs = 5
     hook = AccuracyHook('Train')
     train_batcher.add_hook(hook)
     train_batcher.add_hook(LossHook('Train'))
     dev_batcher.add_hook(AccuracyHook('Dev'))
 
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    t0 = time.time()
     for epoch in range(epochs):
         model.train()
-        i = 0
         for inp, sup, inp_len, sup_len, t in train_batcher:
             optimizer.zero_grad()
             pred = model.forward_to_output(inp, sup, inp_len, sup_len, t)
@@ -105,15 +106,13 @@ def train_model(model, train_batcher, dev_batcher):
             optimizer.step()
             maxiumum, argmax = torch.topk(pred.data, 1)
             train_batcher.add_to_hook_histories(t, argmax, loss)
-            i+=1
-            print(i)
-            if i > 10: break
 
         model.eval()
         for inp, sup, inp_len, sup_len, t in dev_batcher:
             pred = model.forward_to_output(inp, sup, inp_len, sup_len, t)
             maxiumum, argmax = torch.topk(pred.data, 1)
             dev_batcher.add_to_hook_histories(t, argmax, loss)
+    print(time.time() - t0)
 
 
 def print_data(datasets, vocab, num=100):
@@ -144,11 +143,12 @@ def main():
     train_set = load_hdf5_paths(hdf5paths[0])
     dev_set = load_hdf5_paths(hdf5paths[1])
 
-    train_batcher = Batcher(train_set, batch_size=128, len_indices=(2,3), data_indices=(0,1), num_print_thresholds=1000)
-    dev_batcher = Batcher(dev_set, batch_size=128, num_print_thresholds=10)
+    batch_size = 128
+    train_batcher = Batcher(train_set, batch_size=batch_size, len_indices=(2,3), data_indices=(0,1), num_print_thresholds=5, transfer_to_gpu=True)
+    dev_batcher = Batcher(dev_set, batch_size=batch_size, num_print_thresholds=1, transfer_to_gpu=True)
 
-    snli = SNLIClassification(128, vocab, use_cuda=False)
-    #snli.cuda()
+    snli = SNLIClassification(batch_size, vocab, use_cuda=True)
+    snli.cuda()
     snli.train()
     train_model(snli, train_batcher, dev_batcher)
 
