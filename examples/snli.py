@@ -12,14 +12,14 @@ import torch
 import numpy as np
 from torch.autograd import Variable
 import torch.nn.functional as F
-import torch.nn.utils.rnn as rnn_utils
+from scipy.stats.mstats import normaltest
+#import torch.nn.utils.rnn as rnn_utils
+np.set_printoptions(suppress=True)
 
 class SNLIClassification(torch.nn.Module):
-    def __init__(self, datasets, vocab, use_cuda=False):
+    def __init__(self, batcher, vocab, use_cuda=False):
         super(SNLIClassification, self).__init__()
-        self.b = Batcher(datasets, batch_size=128, transfer_to_gpu=use_cuda, num_print_thresholds=100)#, sort_idx_seq_pairs=[(2,0),(3,1)])
-        i, s, _, _, t = self.b.datasets
-        print(s.size())
+        self.b = batcher
         input_dim = 256
         hidden_dim = 128
         num_directions = 2
@@ -33,8 +33,6 @@ class SNLIClassification(torch.nn.Module):
         #self.init_weights()
 
         #print(i.size(1), input_dim)
-        self.proj1 = torch.nn.Linear(i.size(1)*input_dim, hidden_dim)
-        self.proj2 = torch.nn.Linear(s.size(1)*input_dim, hidden_dim)
         self.b1 = None
         self.b2 = None
         self.use_cuda = use_cuda
@@ -98,7 +96,7 @@ def train_model(self):
             pred = self.forward_to_output(inp, sup, inp_len, sup_len, t)
             #print(pred)
             loss = F.nll_loss(pred, t)
-            #print(loss)
+            print(loss)
             loss.backward()
             optimizer.step()
             maxiumum, argmax = torch.topk(pred.data, 1)
@@ -117,6 +115,7 @@ def print_data(datasets, vocab, num=100):
             hypo += vocab.get_word(idx) + ' '
         print([premise, hypo, vocab.idx2label[t[row]]])
 
+
 def main():
     # load data
     names, file_paths = snli2spoder()
@@ -130,63 +129,75 @@ def main():
 
     X, S, X_len, S_len, T = hdf5paths[0]
     datasets = [hdf2numpy(X), hdf2numpy(S), hdf2numpy(X_len), hdf2numpy(S_len), hdf2numpy(T)]
-    l1 = torch.LongTensor(np.int64(datasets[2]))
-    l2 = torch.LongTensor(np.int64(datasets[3]))
-    _, idx = l1.sort(0,descending=True)
-    x1 = datasets[2][idx.numpy()]
-    x2 = datasets[3][idx.numpy()]
-    previ = 10000
+    x1 = datasets[2]
+    x2 = datasets[3]
 
-    previ = 10000
-    prevj = 10000
-    exceptions = []
-    good_idx = []
-    for it, (i, j) in enumerate(zip(x1, x2)):
-        if j > previ or i > previ or j > prevj or i > prevj:
-            print(it, i, j, previ)
-            exceptions.append(j)
-        else:
-            good_idx.append(it)
-        previ = i
-        prevj = j
-
-    print(len(exceptions), 1)
-    idx = idx.numpy()[np.array(good_idx)]
-
-    x1 = datasets[2][idx]
-    x2 = datasets[3][idx]
-    previ = 10000
-    prevj = 10000
-    exceptions = []
-    good_idx = []
-    for it, (i, j) in enumerate(zip(x1, x2)):
-        if j > previ or i > previ or j > prevj or i > prevj:
-            print(it, i, j, previ)
-            exceptions.append(j)
-        else:
-            good_idx.append(it)
-        previ = i
-        prevj = j
-    print(len(exceptions), 2)
-    print(x1[:100])
-    print(x2[:100])
+    b = Batcher(datasets, batch_size=128, len_indices=(2,3), data_indices=(0,1))
 
 
-    datasets2 = []
-    k = 2000
-    for ds in datasets:
-        #datasets2.append(ds[idx][:k])
-        datasets2.append(ds[idx])
-
-    print(datasets2[2][0:100])
-    print(datasets2[3][0:100])
-    #print_data(datasets, vocab)
-    #print_data(datasets2, vocab)
-    #print(type(datasets[0]))
-    snli = SNLIClassification(datasets2, vocab, use_cuda=True)
-    snli.cuda()
+    snli = SNLIClassification(b, vocab, use_cuda=False)
+    #snli.cuda()
     snli.train()
     train_model(snli)
+
+
+    #l1 = torch.LongTensor(np.int64(datasets[2]))
+    #l2 = torch.LongTensor(np.int64(datasets[3]))
+    #_, idx = l1.sort(0,descending=True)
+    #x1 = datasets[2][idx.numpy()]
+    #x2 = datasets[3][idx.numpy()]
+    #previ = 10000
+
+    #previ = 10000
+    #prevj = 10000
+    #exceptions = []
+    #good_idx = []
+    #for it, (i, j) in enumerate(zip(x1, x2)):
+    #    if j > previ or i > previ or j > prevj or i > prevj:
+    #        print(it, i, j, previ)
+    #        exceptions.append(j)
+    #    else:
+    #        good_idx.append(it)
+    #    previ = i
+    #    prevj = j
+
+    #print(len(exceptions), 1)
+    #idx = idx.numpy()[np.array(good_idx)]
+
+    #x1 = datasets[2][idx]
+    #x2 = datasets[3][idx]
+    #previ = 10000
+    #prevj = 10000
+    #exceptions = []
+    #good_idx = []
+    #for it, (i, j) in enumerate(zip(x1, x2)):
+    #    if j > previ or i > previ or j > prevj or i > prevj:
+    #        print(it, i, j, previ)
+    #        exceptions.append(j)
+    #    else:
+    #        good_idx.append(it)
+    #    previ = i
+    #    prevj = j
+    #print(len(exceptions), 2)
+    #print(x1[:100])
+    #print(x2[:100])
+
+
+    #datasets2 = []
+    #k = 2000
+    #for ds in datasets:
+    #    #datasets2.append(ds[idx][:k])
+    #    datasets2.append(ds[idx])
+
+    #print(datasets2[2][0:100])
+    #print(datasets2[3][0:100])
+    ##print_data(datasets, vocab)
+    ##print_data(datasets2, vocab)
+    ##print(type(datasets[0]))
+    #snli = SNLIClassification(datasets2, vocab, use_cuda=True)
+    #snli.cuda()
+    #snli.train()
+    #train_model(snli)
 
 if __name__ == '__main__':
     main()

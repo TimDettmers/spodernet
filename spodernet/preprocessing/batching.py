@@ -8,28 +8,94 @@ import datetime
 class Batcher(object):
     '''Takes data and creates batches over which one can iterate.'''
 
-    def __init__(self, datasets, batch_size=128, transfer_to_gpu=True,
-            num_print_thresholds=1000, sort_idx_seq_pairs=None):
-        self.datasets = []
+    def __init__(self, datasets, batch_size=128, transfer_to_gpu=False,
+            num_print_thresholds=100, len_indices=None, data_indices=None, min_bin_count=10240):
+        self.datasets = datasets
         self.batch_size = batch_size
         self.n = datasets[0].shape[0]
         self.idx = 0
-
-        #shuffle_idx = np.arange(self.n)
-        #np.random.shuffle(shuffle_idx)
-        #for ds in datasets:
-        #    ds = ds[shuffle_idx]
+        self.min_bin_count = min_bin_count
+        self.batch_count = int(self.n/batch_size)
+        self.transfer_to_gpu=transfer_to_gpu
 
         self.print_thresholds = np.int32((int(self.n/batch_size)) *
                 np.arange(num_print_thresholds)/float(num_print_thresholds))
         self.threshold_time = np.zeros(num_print_thresholds)
 
-        self.init_datasets(datasets, transfer_to_gpu)
         self.t0 = time.time()
         self.num_thresholds = num_print_thresholds
         self.epoch = 1
         self.hooks = []
-        self.sort_idx_seq_pairs = sort_idx_seq_pairs
+        self.len_indices = len_indices
+        self.data_indices = data_indices
+        if len_indices != None:
+            self.get_indices_for_bins()
+
+    def get_indices_for_bins(self):
+        idx_bin = []
+        min_count = self.min_bin_count
+        prev_indices = None
+        for ds_idx in self.len_indices:
+            if prev_indices != None:
+                indices = []
+                for idx in prev_indices:
+                   subset = self.datasets[ds_idx][idx]
+                   indices2, lens2 = self.make_bins(subset, min_bin_count=min_count)
+                   for idx2 in indices2:
+                       indices.append(idx[idx2])
+            else:
+                indices, lens = self.make_bins(self.datasets[ds_idx])
+
+            prev_indices = indices
+            min_count /= 10.0
+
+        total_count_indices = 0.0
+        fractions = []
+        for idx in indices:
+            total_count_indices += len(idx)
+        for idx in indices:
+            fractions.append(len(idx)/total_count_indices)
+
+        max_lengths_level1 = []
+        for idx in indices:
+            max_lengths_level2 = []
+            for ds_idx in self.len_indices:
+                max_lengths_level2.append(np.max(self.datasets[ds_idx][idx]))
+            max_lengths_level1.append(max_lengths_level2)
+
+        self.indices = indices
+        self.indices_fractions = np.array(fractions)
+        self.max_lengths = max_lengths_level1
+
+
+    def make_bins(self, x1, max_distance=5, discard_max_fraction=0.10, discard_threshold=0.01, min_bin_count=10240):
+        for i in range(8, 100):
+            counts, bin_borders = np.histogram(x1, bins=i)
+            distance = bin_borders[1] - bin_borders[0]
+            if distance > max_distance: continue
+            counts = np.float32(counts)
+            fractions = counts/np.sum(counts)
+            idx = (fractions < discard_threshold) * (counts > min_bin_count)
+            discard_fraction = np.sum(counts*idx)/ np.sum(counts)
+            if discard_fraction > discard_max_fraction: continue
+            bin_count = i
+
+
+        counts, bin_borders = np.histogram(x1, bins=bin_count)
+        fractions = counts/np.sum(counts)
+        idx = (fractions < discard_threshold) * (counts > min_bin_count)
+        #print(len(counts), len(bin_borders), bin_borders)
+        #print(counts, fractions)
+        #print(np.min(x1), np.max(x1))
+        bins_start = bin_borders[:-1][idx]
+        bins_end = bin_borders[1:][idx]
+        indices = []
+        lens = []
+        for start, end in zip(bins_start, bins_end):
+            idx = np.where((x1 >= start) * (x1 <= end))[0]
+            indices.append(idx)
+            lens.append(x1[idx])
+        return indices, lens
 
     def add_hook(self, hook):
         self.hooks.append(hook)
@@ -82,7 +148,7 @@ class Batcher(object):
 
 
     def next(self):
-        if self.idx + 1 < self.batches:
+        if self.idx + 1 < self.batch_count:
             if np.sum(self.idx == self.print_thresholds) > 0:
                 time_idx = np.where(self.idx == self.print_thresholds)[0][0]
                 self.threshold_time[time_idx] = time.time()-self.t0
@@ -91,22 +157,30 @@ class Batcher(object):
                     for hook in self.hooks:
                         hook.print_statistic(self.epoch)
 
+            bin_idx = np.random.choice(len(self.indices), 1, p=self.indices_fractions)[0]
+            len_bin = len(self.indices[bin_idx])
+            bin_selection_idx = np.random.choice(len_bin, self.batch_size, replace=False)
+            batch_idx = self.indices[bin_idx][bin_selection_idx]
+            max_l1, max_l2 = self.max_lengths[bin_idx]
+            data_idx1, data_idx2 = self.data_indices
+
             batches = []
-            for ds in self.datasets:
-                start = self.idx * self.batch_size
-                end = (self.idx + 1) * self.batch_size
-                batches.append(ds[start:end])
+            for ds_idx, ds in enumerate(self.datasets):
+                data = ds[batch_idx]
+                if ds_idx == data_idx1: data = data[:,:max_l1]
+                if ds_idx == data_idx2: data = data[:,:max_l2]
+                dtype = ds.dtype
+                if dtype == np.int32 or dtype == np.int64:
+                    data_torch = Variable(torch.LongTensor(np.int64(data)))
+                elif dtype == np.float32 or dtype == np.float64:
+                    data_torch = Variable(torch.FloatTensor(np.float32(data)))
+
+                if self.transfer_to_gpu:
+                    batches.append(data_torch.cuda())
+                else:
+                    batches.append(data_torch)
+
             self.idx += 1
-
-            if self.sort_idx_seq_pairs != None:
-                for (idx_sort, idx_seq) in self.sort_idx_seq_pairs:
-                    idx_sorted, idx_argsorted = batches[idx_sort].sort(0, descending=True)
-                    batches[idx_sort] = idx_sorted
-                    batches[idx_seq]= batches[idx_seq][idx_sorted]
-
-
-            for i in range(len(batches)):
-                batches[i] = Variable(batches[i])
 
             return batches
         else:
