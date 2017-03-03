@@ -147,6 +147,44 @@ class Batcher(object):
             hook.add_to_history(targets, argmax, loss)
 
 
+    def sample_batch_from_bins(self):
+        bin_idx = np.random.choice(len(self.indices), 1, p=self.indices_fractions)[0]
+        len_bin = len(self.indices[bin_idx])
+        bin_selection_idx = np.random.choice(len_bin, self.batch_size, replace=False)
+        batch_idx = self.indices[bin_idx][bin_selection_idx]
+
+        return self.get_batch_from_idx(batch_idx, bin_idx)
+
+    def get_batch_from_idx(self, batch_idx, bin_idx=None):
+        batch = []
+        if self.len_indices != None:
+            max_l1, max_l2 = self.max_lengths[bin_idx]
+            data_idx1, data_idx2 = self.data_indices
+
+        for ds_idx, ds in enumerate(self.datasets):
+            data = ds[batch_idx]
+            if self.len_indices != None:
+                if ds_idx == data_idx1: data = data[:,:max_l1]
+                if ds_idx == data_idx2: data = data[:,:max_l2]
+            dtype = ds.dtype
+            if dtype == np.int32 or dtype == np.int64:
+                data_torch = Variable(torch.LongTensor(np.int64(data)))
+            elif dtype == np.float32 or dtype == np.float64:
+                data_torch = Variable(torch.FloatTensor(np.float32(data)))
+
+            if self.transfer_to_gpu:
+                batch.append(data_torch.cuda())
+            else:
+                batch.append(data_torch)
+        return batch
+
+    def get_batch_by_sequence(self):
+        start = self.idx*self.batch_size
+        end = (self.idx+1)*self.batch_size
+        batch_idx = np.arange(start,end)
+
+        return self.get_batch_from_idx(batch_idx)
+
     def next(self):
         if self.idx + 1 < self.batch_count:
             if np.sum(self.idx == self.print_thresholds) > 0:
@@ -157,32 +195,14 @@ class Batcher(object):
                     for hook in self.hooks:
                         hook.print_statistic(self.epoch)
 
-            bin_idx = np.random.choice(len(self.indices), 1, p=self.indices_fractions)[0]
-            len_bin = len(self.indices[bin_idx])
-            bin_selection_idx = np.random.choice(len_bin, self.batch_size, replace=False)
-            batch_idx = self.indices[bin_idx][bin_selection_idx]
-            max_l1, max_l2 = self.max_lengths[bin_idx]
-            data_idx1, data_idx2 = self.data_indices
-
-            batches = []
-            for ds_idx, ds in enumerate(self.datasets):
-                data = ds[batch_idx]
-                if ds_idx == data_idx1: data = data[:,:max_l1]
-                if ds_idx == data_idx2: data = data[:,:max_l2]
-                dtype = ds.dtype
-                if dtype == np.int32 or dtype == np.int64:
-                    data_torch = Variable(torch.LongTensor(np.int64(data)))
-                elif dtype == np.float32 or dtype == np.float64:
-                    data_torch = Variable(torch.FloatTensor(np.float32(data)))
-
-                if self.transfer_to_gpu:
-                    batches.append(data_torch.cuda())
-                else:
-                    batches.append(data_torch)
+            if self.len_indices != None:
+                batch = self.sample_batch_from_bins()
+            else:
+                batch = self.get_batch_by_sequence()
 
             self.idx += 1
 
-            return batches
+            return batch
         else:
             self.idx = 0
             self.epoch += 1

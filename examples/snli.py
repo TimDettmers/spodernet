@@ -3,7 +3,7 @@ from __future__ import print_function
 
 from spodernet.data.snli2spoder import snli2spoder
 from spodernet.preprocessing import spoder2hdf5
-from spodernet.util import hdf2numpy
+from spodernet.util import hdf2numpy, load_hdf5_paths
 from spodernet.preprocessing.batching import Batcher
 from spodernet.hooks import AccuracyHook, LossHook
 from spodernet.models import DualLSTM
@@ -17,9 +17,9 @@ from scipy.stats.mstats import normaltest
 np.set_printoptions(suppress=True)
 
 class SNLIClassification(torch.nn.Module):
-    def __init__(self, batcher, vocab, use_cuda=False):
+    def __init__(self, batch_size, vocab, use_cuda=False):
         super(SNLIClassification, self).__init__()
-        self.b = batcher
+        self.batch_size = batch_size 
         input_dim = 256
         hidden_dim = 128
         num_directions = 2
@@ -27,7 +27,7 @@ class SNLIClassification(torch.nn.Module):
         self.emb= torch.nn.Embedding(vocab.num_embeddings,
                 input_dim, padding_idx=0)#, scale_grad_by_freq=True, padding_idx=0)
         self.projection_to_labels = torch.nn.Linear(layers * 2 * num_directions * hidden_dim, 3)
-        self.dual_lstm = DualLSTM(self.b.batch_size,input_dim,
+        self.dual_lstm = DualLSTM(self.batch_size,input_dim,
                 hidden_dim,layers=layers,
                 bidirectional=True,to_cuda=use_cuda )
         #self.init_weights()
@@ -63,12 +63,12 @@ class SNLIClassification(torch.nn.Module):
         b1.fill_(0)
         for i, num in enumerate(inp_len.data):
             b1[i,num-1,:] = 1
-        out1 = out_all1[b1].view(self.b.batch_size,-1)
+        out1 = out_all1[b1].view(self.batch_size,-1)
 
         b2.fill_(0)
         for i, num in enumerate(sup_len.data):
             b2[i,num-1,:] = 1
-        out2 = out_all2[b2].view(self.b.batch_size,-1)
+        out2 = out_all2[b2].view(self.batch_size,-1)
 
         out = torch.cat([out1,out2],1)
 
@@ -84,23 +84,37 @@ class SNLIClassification(torch.nn.Module):
         #print(pred[0:5])
         return pred
 
-def train_model(self):
+def train_model(model, train_batcher, dev_batcher):
     epochs = 2
     hook = AccuracyHook('Train')
-    self.b.add_hook(hook)
-    self.b.add_hook(LossHook('Train'))
-    optimizer = torch.optim.Adam(self.parameters(), lr=0.001)
+    train_batcher.add_hook(hook)
+    train_batcher.add_hook(LossHook('Train'))
+    dev_batcher.add_hook(AccuracyHook('Dev'))
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     for epoch in range(epochs):
-        for inp, sup, inp_len, sup_len, t in self.b:
+        model.train()
+        i = 0
+        for inp, sup, inp_len, sup_len, t in train_batcher:
             optimizer.zero_grad()
-            pred = self.forward_to_output(inp, sup, inp_len, sup_len, t)
+            pred = model.forward_to_output(inp, sup, inp_len, sup_len, t)
             #print(pred)
             loss = F.nll_loss(pred, t)
-            print(loss)
+            #print(loss)
             loss.backward()
             optimizer.step()
             maxiumum, argmax = torch.topk(pred.data, 1)
-            self.b.add_to_hook_histories(t, argmax, loss)
+            train_batcher.add_to_hook_histories(t, argmax, loss)
+            i+=1
+            print(i)
+            if i > 10: break
+
+        model.eval()
+        for inp, sup, inp_len, sup_len, t in dev_batcher:
+            pred = model.forward_to_output(inp, sup, inp_len, sup_len, t)
+            maxiumum, argmax = torch.topk(pred.data, 1)
+            dev_batcher.add_to_hook_histories(t, argmax, loss)
+
 
 def print_data(datasets, vocab, num=100):
     inp, sup, t = datasets
@@ -127,77 +141,16 @@ def main():
     hdf5paths, vocab = spoder2hdf5.file2hdf(
         file_paths, names, lower_list, add_to_vocab_list, filetype)
 
-    X, S, X_len, S_len, T = hdf5paths[0]
-    datasets = [hdf2numpy(X), hdf2numpy(S), hdf2numpy(X_len), hdf2numpy(S_len), hdf2numpy(T)]
-    x1 = datasets[2]
-    x2 = datasets[3]
+    train_set = load_hdf5_paths(hdf5paths[0])
+    dev_set = load_hdf5_paths(hdf5paths[1])
 
-    b = Batcher(datasets, batch_size=128, len_indices=(2,3), data_indices=(0,1))
+    train_batcher = Batcher(train_set, batch_size=128, len_indices=(2,3), data_indices=(0,1), num_print_thresholds=1000)
+    dev_batcher = Batcher(dev_set, batch_size=128, num_print_thresholds=10)
 
-
-    snli = SNLIClassification(b, vocab, use_cuda=False)
+    snli = SNLIClassification(128, vocab, use_cuda=False)
     #snli.cuda()
     snli.train()
-    train_model(snli)
-
-
-    #l1 = torch.LongTensor(np.int64(datasets[2]))
-    #l2 = torch.LongTensor(np.int64(datasets[3]))
-    #_, idx = l1.sort(0,descending=True)
-    #x1 = datasets[2][idx.numpy()]
-    #x2 = datasets[3][idx.numpy()]
-    #previ = 10000
-
-    #previ = 10000
-    #prevj = 10000
-    #exceptions = []
-    #good_idx = []
-    #for it, (i, j) in enumerate(zip(x1, x2)):
-    #    if j > previ or i > previ or j > prevj or i > prevj:
-    #        print(it, i, j, previ)
-    #        exceptions.append(j)
-    #    else:
-    #        good_idx.append(it)
-    #    previ = i
-    #    prevj = j
-
-    #print(len(exceptions), 1)
-    #idx = idx.numpy()[np.array(good_idx)]
-
-    #x1 = datasets[2][idx]
-    #x2 = datasets[3][idx]
-    #previ = 10000
-    #prevj = 10000
-    #exceptions = []
-    #good_idx = []
-    #for it, (i, j) in enumerate(zip(x1, x2)):
-    #    if j > previ or i > previ or j > prevj or i > prevj:
-    #        print(it, i, j, previ)
-    #        exceptions.append(j)
-    #    else:
-    #        good_idx.append(it)
-    #    previ = i
-    #    prevj = j
-    #print(len(exceptions), 2)
-    #print(x1[:100])
-    #print(x2[:100])
-
-
-    #datasets2 = []
-    #k = 2000
-    #for ds in datasets:
-    #    #datasets2.append(ds[idx][:k])
-    #    datasets2.append(ds[idx])
-
-    #print(datasets2[2][0:100])
-    #print(datasets2[3][0:100])
-    ##print_data(datasets, vocab)
-    ##print_data(datasets2, vocab)
-    ##print(type(datasets[0]))
-    #snli = SNLIClassification(datasets2, vocab, use_cuda=True)
-    #snli.cuda()
-    #snli.train()
-    #train_model(snli)
+    train_model(snli, train_batcher, dev_batcher)
 
 if __name__ == '__main__':
     main()

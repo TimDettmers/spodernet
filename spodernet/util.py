@@ -12,3 +12,13 @@ def hdf2numpy(path, keyword='default'):
     h5file = h5py.File(path, 'r')
     dset = h5file.get(keyword)
     return dset[:]
+
+
+def load_hdf5_paths(paths, limit=None):
+    data = []
+    for path in paths:
+        if limit != None:
+            data.append(hdf2numpy(path)[:limit])
+        else:
+            data.append(hdf2numpy(path))
+    return data
