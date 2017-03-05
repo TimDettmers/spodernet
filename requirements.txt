@@ -3,3 +3,4 @@ czipfile
 numpy
 h5py
 nltk
+enum34
