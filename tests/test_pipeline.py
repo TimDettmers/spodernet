@@ -16,7 +16,7 @@ from spodernet.logger import Logger, LogLevel
 log = Logger('test', 'test_pipeline.py.txt')
 
 Logger.GLOBAL_LOG_LEVEL = LogLevel.STATISTICAL
-Logger.LOG_PROPABILITY = 0.2
+Logger.LOG_PROPABILITY = 0.1
 
 def get_test_data_path_dict():
     paths = {}
@@ -54,7 +54,7 @@ def test_tokenization():
     sents_nltk = tokenized_sents['input'] + tokenized_sents['support']
     # 3. test equality
     assert len(sents) == len(sents_nltk), 'Sentence count differs!'
-    log.debug('count should be 100: {0}', len(sents))
+    log.debug('count should be 200: {0}', len(sents))
     for sent1, sent2 in zip(sents, sents_nltk):
         assert len(sent1) == len(sent2), 'Token count differs!'
         log.statistical('a sentence of tokens: {0}', sent1)
@@ -390,3 +390,6 @@ def test_save_lengths():
     for l1, l2 in zip(lengths1, lengths2):
         assert l1 == l2, 'Lengths of sentence differs!'
 
+
+def test_stream_to_hdf5():
+    assert False, 'Needs to be implemented first!'

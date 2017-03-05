@@ -1,3 +1,6 @@
+from spodernet.logger import Logger
+
+log = Logger('preprocessing', 'processors.py.txt')
 
 class AbstractProcessor(object):
     def __init__(self):
@@ -127,3 +130,41 @@ class SaveLengths(AbstractLoopLevelListOfTokensProcessor):
         if inp_type not in self.data: self.data[inp_type] = []
         self.data[inp_type].append(len(tokens))
         return tokens
+
+class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
+    def __init__(self, successive_for_loops_to_sentences=1, samples_per_file=50000, max_length=None):
+        super(StreamToHDF5, self).__init__(successive_for_loops_to_sentences)
+        self.max_length = max_length
+        self.samples_per_file = samples_per_file
+
+    def link_with_pipeline(self, state):
+        self.state = state
+        self.shard_id = 1
+        self.root = self.state['path']
+        self.data = {'target' : [], 'input' : [], 'support' : []}
+
+    def process_list_of_tokens(self, tokens, inp_type):
+        if inp_type != 'target':
+            if self.max_length is None:
+                if 'length' not in self.state['data']:
+                    log.error('Either specify the max_length or create lengths via the "SaveLengths" processor')
+                if inp_type not in self.state['data']['length']:
+                    log.error('Either specify the max_length or create lengths via the "SaveLengths" processor')
+                max_length = np.max(self.state['data']['length'][inp_type])
+                log.statistical('max length of the dataset: {0}', max_length)
+                log.debug('using type int32 for inputs and supports for now, but this may not be correct in the future') 
+                x = np.zeros((1,max_length), dtype=np.int32)
+                x[:len(tokens)] = tokens
+                self.data[inp_type].append(x)
+        else:
+            data['target'].append(tokens)
+
+        if len(data) == self.samples_per_file:
+            pass
+
+        return tokens
+
+    def save_to_hdf5(self):
+        self.data = {'target' : [], 'input' : [], 'support' : []}
+        self.shard_id += 1
+        pass
