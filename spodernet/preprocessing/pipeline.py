@@ -13,7 +13,6 @@ class Pipeline(object):
         self.text_processors = []
         self.sent_processors = []
         self.token_processors = []
-        self.target_processors = []
         self.post_processors = []
         self.paths = []
         home = os.environ['HOME']
@@ -38,11 +37,6 @@ class Pipeline(object):
         log.debug('Added token preprocessor {0}', type(token_processor))
         self.token_processors.append(token_processor)
 
-    def add_target_processor(self, target_processor):
-        target_processor.link_with_pipeline(self.state)
-        log.debug('Added target preprocessor {0}', type(target_processor))
-        self.target_processors.append(target_processor)
-
     def add_post_processor(self, post_processor):
         post_processor.link_with_pipeline(self.state)
         log.debug('Added post preprocessor {0}', type(post_processor))
@@ -62,6 +56,12 @@ class Pipeline(object):
             log.statistical('this is a target in text format {0}', target)
             yield inp, support, target
 
+    def clear_processors(self):
+        self.post_processors = []
+        self.sent_processors = []
+        self.token_processors = []
+        self.text_processors = []
+
     def execute(self):
         '''Tokenizes the data, calcs the max length, and creates a vocab.'''
 
@@ -70,18 +70,23 @@ class Pipeline(object):
                 for textp in self.text_processors:
                     inp = textp.process(inp, inp_type='input')
                     sup = textp.process(sup, inp_type='support')
+                    target = textp.process(target, inp_type='target')
 
                 inp_sents = (inp if isinstance(inp, list) else [inp])
                 sup_sents = (sup if isinstance(sup, list) else [sup])
+                t_sents = (target if isinstance(target, list) else [target])
 
                 for sentp in self.sent_processors:
                     for i in range(len(inp_sents)):
                         inp_sents[i] = sentp.process(inp_sents[i], inp_type='input')
                     for i in range(len(sup_sents)):
                         sup_sents[i] = sentp.process(sup_sents[i], inp_type='support')
+                    for i in range(len(t_sents)):
+                        t_sents[i] = sentp.process(t_sents[i], inp_type='target')
 
                 inp_words = (inp_sents if isinstance(inp_sents[0], list) else [[sent] for sent in inp_sents])
                 sup_words = (sup_sents if isinstance(sup_sents[0], list) else [[sent] for sent in sup_sents])
+                t_words = (t_sents if isinstance(t_sents[0], list) else [[sent] for sent in t_sents])
 
                 for tokenp in self.token_processors:
                     for i in range(len(inp_words)):
@@ -92,11 +97,13 @@ class Pipeline(object):
                         for j in range(len(sup_words[i])):
                             sup_words[i][j] = tokenp.process(sup_words[i][j], inp_type='support')
 
-                for targetp in self.target_processors:
-                    target = targetp.process(target, inp_type='target')
+                    for i in range(len(t_words)):
+                        for j in range(len(t_words[i])):
+                            t_words[i][j] = tokenp.process(t_words[i][j], inp_type='target')
 
                 for postp in self.post_processors:
                     inp_words = postp.process(inp_words, inp_type='input')
                     sup_words = postp.process(sup_words, inp_type='support')
+                    t_words = postp.process(t_words, inp_type='target')
 
         return self.state

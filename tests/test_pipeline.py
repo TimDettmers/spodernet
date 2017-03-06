@@ -6,10 +6,14 @@ import os
 import nltk
 import pytest
 import json
+import numpy as np
+import shutil
 
 from spodernet.preprocessing.pipeline import Pipeline
-from spodernet.preprocessing.processors import Tokenizer, SaveStateToList, AddToVocab, ToLower, ConvertTokenToIdx, SaveLengths
+from spodernet.preprocessing.processors import Tokenizer, SaveStateToList, AddToVocab, ToLower, ConvertTokenToIdx, SaveLengthsToState
+from spodernet.preprocessing.processors import StreamToHDF5
 from spodernet.preprocessing.vocab import Vocab
+from spodernet.util import get_data_path, hdf2numpy
 
 from spodernet.logger import Logger, LogLevel
 
@@ -84,7 +88,6 @@ def test_vocab():
     p.add_path(get_test_data_path_dict()['snli'])
     p.add_sent_processor(Tokenizer(tokenizer.tokenize))
     p.add_token_processor(AddToVocab())
-    p.add_target_processor(AddToVocab())
     state = p.execute()
 
     # 1. use Vocab manually and test it against manual vocabulary
@@ -297,12 +300,9 @@ def test_convert_token_to_idx_no_sentences():
     p.add_path(get_test_data_path_dict()['snli'])
     p.add_sent_processor(Tokenizer(tokenizer.tokenize))
     p.add_token_processor(AddToVocab())
-    p.add_target_processor(AddToVocab())
     # for sents in sample -> for token in sents = 2 for loops to token
     p.add_post_processor(ConvertTokenToIdx(successive_for_loops_to_tokens=2))
     p.add_post_processor(SaveStateToList('idx'))
-    p.add_target_processor(ConvertTokenToIdx(successive_for_loops_to_tokens=0, is_label=True))
-    p.add_target_processor(SaveStateToList('idx'))
     state = p.execute()
 
     inp_indices = state['data']['idx']['input']
@@ -353,8 +353,10 @@ def test_convert_token_to_idx_no_sentences():
             assert idx1 == idx2, 'Index for token differs!'
 
     # 5. Compare label idx
-    for idx1, idx2 in zip(tokenized_sents['target'], label_idx):
-        assert idx1 == idx2, 'Index for label differs!'
+    for idx1, sample in zip(tokenized_sents['target'], label_idx):
+        # sample[0] == sent
+        # sent[0] = idx
+        assert idx1 == sample[0][0], 'Index for label differs!'
 
 def test_save_lengths():
     tokenizer = nltk.tokenize.WordPunctTokenizer()
@@ -364,7 +366,7 @@ def test_save_lengths():
     p.add_path(get_test_data_path_dict()['snli'])
     p.add_sent_processor(Tokenizer(tokenizer.tokenize))
     # for sents in sample -> sents = list of tokens = 1 for loop
-    p.add_post_processor(SaveLengths(successive_for_loops_to_sentences=1))
+    p.add_post_processor(SaveLengthsToState(successive_for_loops_to_sentences=1))
     state = p.execute()
 
     lengths_inp = state['data']['lengths']['input']
@@ -392,4 +394,79 @@ def test_save_lengths():
 
 
 def test_stream_to_hdf5():
-    assert False, 'Needs to be implemented first!'
+    tokenizer = nltk.tokenize.WordPunctTokenizer()
+    data_folder_name = 'snli_test'
+
+    # 1. Setup pipeline to save lengths and generate vocabulary
+    p = Pipeline('test_pipeline')
+    p.add_path(get_test_data_path_dict()['snli'])
+    p.add_sent_processor(Tokenizer(tokenizer.tokenize))
+    # for sents in sample -> sents = list of tokens = 1 for loop
+    p.add_post_processor(SaveLengthsToState(successive_for_loops_to_sentences=1))
+    p.execute()
+    p.clear_processors()
+
+    # 2. Process the data further to stream it to hdf5
+    p.add_sent_processor(Tokenizer(tokenizer.tokenize))
+    p.add_token_processor(AddToVocab())
+    # for sents in sample -> for token in tokens = 2 for loop
+    p.add_post_processor(ConvertTokenToIdx(successive_for_loops_to_tokens=2))
+    p.add_post_processor(SaveStateToList('idx'))
+    # 2 samples per file -> 50 files
+    p.add_post_processor(StreamToHDF5(data_folder_name, successive_for_loops_to_sentences=1, samples_per_file=2))
+    state = p.execute()
+
+    # 2. Load data from the SaveStateToList hook
+    inp_indices = state['data']['idx']['input']
+    sup_indices = state['data']['idx']['support']
+    t_indices = state['data']['idx']['target']
+    max_inp_len = np.max(state['data']['lengths']['input'])
+    max_sup_len = np.max(state['data']['lengths']['support'])
+    # For SNLI the targets consist of single words'
+    assert np.max(state['data']['lengths']['target']) == 1, 'Max index label length should be 1'
+
+    # 3. parse data to numpy
+    n = len(inp_indices)
+    X = np.zeros((n, max_inp_len), dtype=np.int64)
+    X_len = np.zeros((n), dtype=np.int64)
+    S = np.zeros((n, max_sup_len), dtype=np.int64)
+    S_len = np.zeros((n), dtype=np.int64)
+    t = np.zeros((n), dtype=np.int64)
+
+    for i in range(len(inp_indices)):
+        sample_inp = inp_indices[i][0]
+        sample_sup = sup_indices[i][0]
+        sample_t = t_indices[i][0]
+        l = len(sample_inp)
+        X_len[i] = l
+        X[i, :l] = sample_inp
+
+        l = len(sample_sup)
+        S_len[i] = l
+        S[i, :l] = sample_sup
+
+        t[i] = sample_t[0]
+
+    # 4. setup expected paths
+    base_path = join(get_data_path(), data_folder_name)
+    inp_paths = [join(base_path, 'input_' + str(i) + '.hdf5') for i in range(1, 50)]
+    sup_paths = [join(base_path, 'support_' + str(i) + '.hdf5') for i in range(1, 50)]
+    target_paths = [join(base_path, 'target_' + str(i) + '.hdf5') for i in range(1, 50)]
+    inp_len_paths = [join(base_path, 'input_lengths_' + str(i) + '.hdf5') for i in range(1, 50)]
+    sup_len_paths = [join(base_path, 'support_lengths_' + str(i) + '.hdf5') for i in range(1, 50)]
+    zip_iter = zip([X, S, t, X_len, S_len], [inp_paths, sup_paths, target_paths, inp_len_paths, sup_len_paths])
+
+    # 5. Compare data
+    for data, paths in zip_iter:
+        data_idx = 0
+        for path in paths:
+            assert os.path.exists(path), 'This file should have been created by the HDF5Streamer: {0}'.format(path)
+            shard = hdf2numpy(path)
+            start = data_idx*2
+            end = (data_idx + 1)*2
+            np.testing.assert_array_equal(shard, data[start:end], 'HDF5 Stream data not equal')
+            data_idx += 1
+
+    # 6. clean up
+    shutil.rmtree(base_path)
+

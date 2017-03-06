@@ -1,10 +1,26 @@
 from enum import IntEnum
 from os.path import join
-from spodernet.util import  get_logger_path, make_dirs_if_not_exists
 
+import os
 import datetime
-
 import numpy as np
+
+# util functions start
+#
+# these function also exist in util.py,
+# but since logger is imported everywere these function need to be included here
+
+def get_home_path():
+    return os.environ['HOME']
+
+def get_logger_path():
+    return join(get_home_path(), '.data', 'log_files')
+
+def make_dirs_if_not_exists(path):
+    if not os.path.exists(path):
+        os.makedirs(path)
+
+# util functions end
 
 class LogLevel(IntEnum):
     STATISTICAL = 0
@@ -21,11 +37,12 @@ class Logger:
         path = join(get_logger_path(), file_name)
         path_statistical = join(get_logger_path(), 'statistical_' + file_name)
         self.path = path
-        make_dirs_if_not_exists(folder)
+        make_dirs_if_not_exists(get_logger_path())
         self.f = open(path, write_type)
         self.f_statistical = open(path_statistical, write_type)
         self.rdm = np.random.RandomState(234234)
         self.debug('Created log file at: {0} with write type: {1}'.format(path, write_type))
+        self.once_set = set()
 
     def __del__(self):
         self.f.close()
@@ -39,6 +56,11 @@ class Logger:
 
     def debug(self, message, *args):
         self._log(message, LogLevel.DEBUG, *args)
+
+    def debug_once(self, message, *args):
+        if message not in self.once_set:
+            self.once_set.add(message)
+            self._log(message, LogLevel.DEBUG, *args)
 
     def info(self, message, *args):
         self._log(message, LogLevel.INFO, *args)
