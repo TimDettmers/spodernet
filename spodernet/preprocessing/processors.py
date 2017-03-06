@@ -1,4 +1,9 @@
+from os.path import join
+
+import numpy as np
+
 from spodernet.logger import Logger
+from spodernet.util import get_data_path, numpy2hdf, make_dirs_if_not_exists
 
 log = Logger('processors.py.txt')
 
@@ -118,9 +123,9 @@ class SaveStateToList(AbstractProcessor):
         self.data[inp_type].append(data)
         return data
 
-class SaveLengths(AbstractLoopLevelListOfTokensProcessor):
+class SaveLengthsToState(AbstractLoopLevelListOfTokensProcessor):
     def __init__(self, successive_for_loops_to_sentences=1):
-        super(SaveLengths, self).__init__(successive_for_loops_to_sentences)
+        super(SaveLengthsToState, self).__init__(successive_for_loops_to_sentences)
 
     def link_with_pipeline(self, state):
         self.state = state
@@ -135,39 +140,59 @@ class SaveLengths(AbstractLoopLevelListOfTokensProcessor):
         return tokens
 
 class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
-    def __init__(self, successive_for_loops_to_sentences=1, samples_per_file=50000, max_length=None):
+    def __init__(self, name, successive_for_loops_to_sentences=1, samples_per_file=50000, max_length=None):
         super(StreamToHDF5, self).__init__(successive_for_loops_to_sentences)
         self.max_length = max_length
         self.samples_per_file = samples_per_file
+        self.path = join(get_data_path(), name)
+        make_dirs_if_not_exists(self.path)
 
     def link_with_pipeline(self, state):
         self.state = state
-        self.shard_id = 1
+        self.shard_id = {'target' : 0, 'input' : 0, 'support' : 0}
         self.root = self.state['path']
         self.data = {'target' : [], 'input' : [], 'support' : []}
+        self.idx = 0
+        self.num_samples = None
 
     def process_list_of_tokens(self, tokens, inp_type):
-        if inp_type != 'target':
-            if self.max_length is None:
-                if 'length' not in self.state['data']:
-                    log.error('Either specify the max_length or create lengths via the "SaveLengths" processor')
-                if inp_type not in self.state['data']['length']:
-                    log.error('Either specify the max_length or create lengths via the "SaveLengths" processor')
-                max_length = np.max(self.state['data']['length'][inp_type])
-                log.statistical('max length of the dataset: {0}', max_length)
-                log.debug('using type int32 for inputs and supports for now, but this may not be correct in the future') 
-                x = np.zeros((1,max_length), dtype=np.int32)
-                x[:len(tokens)] = tokens
-                self.data[inp_type].append(x)
-        else:
-            data['target'].append(tokens)
+        if self.max_length is None:
+            if 'lengths' not in self.state['data']:
+                log.error(('Do a first pass to produce lengths first, that is use the "SaveLengths" ',
+                           'processor, execute, clean processors, then rerun the pipeline with hdf5 streaming.'))
+            if inp_type not in self.state['data']['lengths']:
+                log.error(('Do a first pass to produce lengths first, that is use the "SaveLengths" ',
+                           'processor, execute, clean processors, then rerun the pipeline with hdf5 streaming.'))
+            if self.num_samples == None:
+                self.num_samples = len(self.state['data']['lengths']['input'])
 
-        if len(data) == self.samples_per_file:
-            pass
+            max_length = np.max(self.state['data']['lengths'][inp_type])
+            log.statistical('max length of the dataset: {0}', max_length)
+            log.debug_once('Using type int32 for inputs and supports for now, but this may not be correct in the future')
+            x = np.zeros((max_length), dtype=np.int32)
+            x[:len(tokens)] = tokens
+            if len(tokens) == 1:
+                self.data[inp_type].append(x[0])
+            else:
+                self.data[inp_type].append(x)
+
+        if len(self.data[inp_type]) == self.samples_per_file or self.idx == self.num_samples:
+            self.save_to_hdf5(inp_type)
 
         return tokens
 
-    def save_to_hdf5(self):
-        self.data = {'target' : [], 'input' : [], 'support' : []}
-        self.shard_id += 1
-        pass
+    def save_to_hdf5(self, inp_type):
+        idx = self.shard_id[inp_type]
+        X = np.array(self.data[inp_type])
+        file_name = inp_type + '_' + str(idx+1) + '.hdf5'
+        numpy2hdf(join(self.path, file_name), X)
+
+        if inp_type != 'target':
+            start = idx*self.samples_per_file
+            end = (idx+1)*self.samples_per_file
+            X_len = np.array(self.state['data']['lengths'][inp_type][start:end])
+            file_name_len = inp_type + '_lengths_' + str(idx+1) + '.hdf5'
+            numpy2hdf(join(self.path, file_name_len), X_len)
+
+        self.shard_id[inp_type] += 1
+        del self.data[inp_type][:]

@@ -9,10 +9,11 @@ from spodernet.logger import Logger
 log = Logger('util.py.txt')
 
 def numpy2hdf(path, data):
-    '''Write a numpy array to a hdf5 file under the given path.'''
-    log.debug('Loading hdf5 file from: {0}', path)
+    '''Writes a numpy array to a hdf5 file under the given path.'''
+    #log.debug('Saving hdf5 file to: {0}', path)
     h5file = h5py.File(path, "w")
     h5file.create_dataset("default", data=data)
+    h5file.close()
 
 
 def hdf2numpy(path, keyword='default'):
@@ -20,8 +21,9 @@ def hdf2numpy(path, keyword='default'):
     log.debug('Reading hdf5 file from: {0}', path)
     h5file = h5py.File(path, 'r')
     dset = h5file.get(keyword)
-    return dset[:]
-
+    data = dset[:]
+    h5file.close()
+    return data
 
 def load_hdf5_paths(paths, limit=None):
     data = []
@@ -35,8 +37,8 @@ def load_hdf5_paths(paths, limit=None):
 def get_home_path():
     return os.environ['HOME']
 
-def get_logger_path():
-    return join(get_home_path(), '.data', 'log_files')
+def get_data_path():
+    return join(os.environ['HOME'], '.data')
 
 def make_dirs_if_not_exists(path):
     if not os.path.exists(path):
