@@ -13,7 +13,7 @@ from spodernet.preprocessing.vocab import Vocab
 
 from spodernet.logger import Logger, LogLevel
 
-log = Logger('test', 'test_pipeline.py.txt')
+log = Logger('test_pipeline.py.txt')
 
 Logger.GLOBAL_LOG_LEVEL = LogLevel.STATISTICAL
 Logger.LOG_PROPABILITY = 0.1

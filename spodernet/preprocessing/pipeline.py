@@ -4,6 +4,9 @@ import os
 import json
 
 from spodernet.preprocessing.vocab import Vocab
+from spodernet.logger import Logger
+
+log = Logger('pipeline.py.txt')
 
 class Pipeline(object):
     def __init__(self, name):
@@ -22,32 +25,41 @@ class Pipeline(object):
 
     def add_text_processor(self, text_processor):
         text_processor.link_with_pipeline(self.state)
+        log.debug('Added text preprocessor {0}', type(text_processor))
         self.text_processors.append(text_processor)
 
     def add_sent_processor(self, sent_processor):
         sent_processor.link_with_pipeline(self.state)
+        log.debug('Added sent preprocessor {0}', type(sent_processor))
         self.sent_processors.append(sent_processor)
 
     def add_token_processor(self, token_processor):
         token_processor.link_with_pipeline(self.state)
+        log.debug('Added token preprocessor {0}', type(token_processor))
         self.token_processors.append(token_processor)
 
     def add_target_processor(self, target_processor):
         target_processor.link_with_pipeline(self.state)
+        log.debug('Added target preprocessor {0}', type(target_processor))
         self.target_processors.append(target_processor)
 
     def add_post_processor(self, post_processor):
         post_processor.link_with_pipeline(self.state)
+        log.debug('Added post preprocessor {0}', type(post_processor))
         self.post_processors.append(post_processor)
 
     def add_path(self, path):
+        log.debug('Added path to JSON file {0}', path)
         self.paths.append(path)
 
     def stream_file(self, path):
-        print('Processing file {0}'.format(path))
+        log.debug('Processing file {0}'.format(path))
         for line in open(path):
             # we have comma separated files
             inp, support, target = json.loads(line)
+            log.statistical('this is some input in text format {0}', inp)
+            log.statistical('this is a support in text format {0}', support)
+            log.statistical('this is a target in text format {0}', target)
             yield inp, support, target
 
     def execute(self):

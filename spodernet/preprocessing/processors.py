@@ -1,6 +1,6 @@
 from spodernet.logger import Logger
 
-log = Logger('preprocessing', 'processors.py.txt')
+log = Logger('processors.py.txt')
 
 class AbstractProcessor(object):
     def __init__(self):
@@ -96,8 +96,10 @@ class ConvertTokenToIdx(AbstractLoopLevelTokenProcessor):
 
     def process_token(self, token, inp_type):
         if inp_type != 'target':
+            log.statistical('a label {0}', token)
             return self.state['vocab'].get_idx(token)
         else:
+            log.statistical('a non-label token {0}', token)
             return self.state['vocab'].get_idx_label(token)
 
 class SaveStateToList(AbstractProcessor):
@@ -129,6 +131,7 @@ class SaveLengths(AbstractLoopLevelListOfTokensProcessor):
     def process_list_of_tokens(self, tokens, inp_type):
         if inp_type not in self.data: self.data[inp_type] = []
         self.data[inp_type].append(len(tokens))
+        log.statistical('A list of tokens: {0}', tokens)
         return tokens
 
 class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):

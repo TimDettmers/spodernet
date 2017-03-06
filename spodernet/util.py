@@ -4,15 +4,20 @@ import h5py
 import os
 import time
 
+from spodernet.logger import Logger
+
+log = Logger('util.py.txt')
 
 def numpy2hdf(path, data):
     '''Write a numpy array to a hdf5 file under the given path.'''
+    log.debug('Loading hdf5 file from: {0}', path)
     h5file = h5py.File(path, "w")
     h5file.create_dataset("default", data=data)
 
 
 def hdf2numpy(path, keyword='default'):
     '''Reads and returns a numpy array for a hdf5 file'''
+    log.debug('Reading hdf5 file from: {0}', path)
     h5file = h5py.File(path, 'r')
     dset = h5file.get(keyword)
     return dset[:]
@@ -31,7 +36,7 @@ def get_home_path():
     return os.environ['HOME']
 
 def get_logger_path():
-    return join(get_home_path(), '.data', 'logger')
+    return join(get_home_path(), '.data', 'log_files')
 
 def make_dirs_if_not_exists(path):
     if not os.path.exists(path):
@@ -55,7 +60,7 @@ class Timer(object):
 
     def tock(self, name='default'):
         self.tick(name)
-        print('Time taken for {0}: {1:.1f}s'.format(name, self.cumulative_secs[name]))
+        log.info('Time taken for {0}: {1:.1f}s'.format(name, self.cumulative_secs[name]))
         self.cumulative_secs.pop(name)
         self.current_ticks.pop(name, None)
 
