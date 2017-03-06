@@ -17,10 +17,9 @@ class Logger:
     GLOBAL_LOG_LEVEL = LogLevel.INFO
     LOG_PROPABILITY = 0.05
 
-    def __init__(self, folder_name, file_name, write_type='w'):
-        folder = join(get_logger_path(), folder_name)
-        path = join(folder, file_name)
-        path_statistical = join(folder, 'statistical_' + file_name)
+    def __init__(self, file_name, write_type='w'):
+        path = join(get_logger_path(), file_name)
+        path_statistical = join(get_logger_path(), 'statistical_' + file_name)
         self.path = path
         make_dirs_if_not_exists(folder)
         self.f = open(path, write_type)
