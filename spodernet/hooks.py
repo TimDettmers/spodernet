@@ -1,9 +1,9 @@
-import numpy as np
 from torch.autograd import Variable
+
 import torch
+import numpy as np
 
 from spodernet.logger import Logger
-
 log = Logger('hooks.py.txt')
 
 class AbstractHook(object):

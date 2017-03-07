@@ -1,8 +1,9 @@
-'''This models manages the vocabulary and token embeddings'''
-import cPickle as pickle
-import numpy as np
 from collections import Counter
 
+import cPickle as pickle
+import numpy as np
+
+'''This models the vocabulary and token embeddings'''
 
 class Vocab(object):
     '''Class that manages work/char embeddings'''

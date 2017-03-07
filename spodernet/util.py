@@ -5,7 +5,6 @@ import os
 import time
 
 from spodernet.logger import Logger
-
 log = Logger('util.py.txt')
 
 def numpy2hdf(path, data):
