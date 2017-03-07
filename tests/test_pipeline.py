@@ -8,10 +8,11 @@ import pytest
 import json
 import numpy as np
 import shutil
+import cPickle as pickle
 
 from spodernet.preprocessing.pipeline import Pipeline
 from spodernet.preprocessing.processors import Tokenizer, SaveStateToList, AddToVocab, ToLower, ConvertTokenToIdx, SaveLengthsToState
-from spodernet.preprocessing.processors import StreamToHDF5
+from spodernet.preprocessing.processors import StreamToHDF5, CreateBinsByNestedLength
 from spodernet.preprocessing.vocab import Vocab
 from spodernet.util import get_data_path, hdf2numpy
 
@@ -25,6 +26,7 @@ Logger.LOG_PROPABILITY = 0.1
 def get_test_data_path_dict():
     paths = {}
     paths['snli'] = './tests/test_data/snli.json'
+    paths['snli10k'] = './tests/test_data/snli_10k.json'
     paths['wiki'] = './tests/test_data/wiki.json'
 
     return paths
@@ -254,7 +256,7 @@ def test_save_to_list_post_process():
     p.add_post_processor(SaveStateToList('samples'))
     state = p.execute()
 
-    # 2. setup manual sent -> token processing
+    # 2. setup manual sentence -> token processing
     inp_samples = state['data']['samples']['input']
     sup_samples = state['data']['samples']['support']
     inp_samples2 = []
@@ -465,4 +467,80 @@ def test_stream_to_hdf5():
 
     # 6. clean up
     shutil.rmtree(base_path)
+
+
+def test_bin_search():
+    tokenizer = nltk.tokenize.WordPunctTokenizer()
+    data_folder_name = 'snli10k_bins'
+    total_samples = 10000.0
+
+    # 1. Setup pipeline to save lengths and generate vocabulary
+    p = Pipeline('test_pipeline')
+    p.add_path(get_test_data_path_dict()['snli10k'])
+    p.add_sent_processor(Tokenizer(tokenizer.tokenize))
+    p.add_post_processor(SaveLengthsToState())
+    p.execute()
+    p.clear_processors()
+
+    # 2. Execute the binning procedure
+    p.add_path(get_test_data_path_dict()['snli10k'])
+    p.add_sent_processor(Tokenizer(tokenizer.tokenize))
+    p.add_token_processor(AddToVocab())
+    p.add_post_processor(ConvertTokenToIdx())
+    bin_creator = CreateBinsByNestedLength(data_folder_name, min_batch_size=16)
+    p.add_post_processor(bin_creator)
+    state = p.execute()
+
+    # 3. We proceed to test if the bin sizes are correct, the config is correct, 
+    #    if the calculated fraction of wasted samples is correct.
+    #    This makes use of the state of the CreateBins class itself which
+    #    thus biases this test. Use statiatical logging for 
+    #    additional verification of correctness.
+
+    # 3.1 Test config equality
+    base_path = join(get_data_path(), 'test_pipeline', data_folder_name)
+    config_path = join(base_path, 'bin_config.pkl')
+    print(base_path)
+    print(os.path.exists(base_path))
+    assert os.path.exists(base_path), 'Base path for binning does not exist!'
+    assert os.path.exists(config_path), 'Config file for binning not found!'
+    config = pickle.load(open(config_path))
+    for key in config:
+        value1 = config[key]
+        value2 = bin_creator.config[key]
+        if isinstance(value1, list):
+            for v1, v2 in zip(value1, value2):
+                assert v1==v2, 'List values for config key {0} not equal!'.format(key)
+        elif isinstance(value1, dict):
+            for key in value1:
+                assert value1[key] == value2[key], 'Dict value for config key {0} not equal!'.format(key)
+        else:
+            assert False, 'A list or dictionary instance was expected!'
+
+    assert len(bin_creator.bin_idx2length_tuple.keys()) > 0, 'Config indicates no bin files were created!'
+    num_idxs = np.max(bin_creator.bin_idx2length_tuple.keys())
+    paths_inp = [join(base_path, 'input_bin_{0}.hdf5'.format(i)) for i in range(num_idxs)]
+    paths_sup = [join(base_path, 'support_bin_{0}.hdf5'.format(i)) for i in range(num_idxs)]
+
+    # 3.2 Test length, count and total count equality
+    num_samples_bins = total_samples*(1.0-bin_creator.wasted_fraction)
+    cumulative_count = 0.0
+    for i, (path_inp, path_sup) in enumerate(zip(paths_inp, paths_sup)):
+        inp = hdf2numpy(path_inp)
+        sup = hdf2numpy(path_sup)
+        (l1, l2), count = bin_creator.bin_idx2length_tuple[i]
+        expected_bin_fraction = count/num_samples_bins
+        actual_bin_fraction = bin_creator.bin_fractions[i]
+        assert actual_bin_fraction == expected_bin_fraction, 'Bin fraction for bin {0} not equal'.format(i)
+        print(inp.shape)
+        print(count, l1, l2)
+        print(path_inp)
+        assert inp.shape[0] == count, 'Count for input bin at {0} not as expected'.format(path_inp)
+        assert sup.shape[0] == count, 'Count for support bin at {0} not as expected'.format(path_sup)
+        assert inp.shape[1] == l1, 'Input data sequence length for {0} not as expected'.format(path_inp)
+        assert inp.shape[2] == l2, 'Support data sequence length for {0} not as expected'.format(path_sup)
+        assert bin_fraction
+        cumulative_count += count
+
+    assert cumulative_count == num_samples_bins, 'Number of total bin samples not as expected!'
 
