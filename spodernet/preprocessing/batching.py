@@ -1,9 +1,9 @@
-import numpy as np
-import torch
 from torch.autograd import Variable
+
 import time
 import datetime
-
+import numpy as np
+import torch
 
 class Batcher(object):
     '''Takes data and creates batches over which one can iterate.'''

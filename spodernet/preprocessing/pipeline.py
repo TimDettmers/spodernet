@@ -4,8 +4,8 @@ import os
 import json
 
 from spodernet.preprocessing.vocab import Vocab
-from spodernet.logger import Logger
 
+from spodernet.logger import Logger
 log = Logger('pipeline.py.txt')
 
 class Pipeline(object):

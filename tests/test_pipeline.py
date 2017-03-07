@@ -300,8 +300,7 @@ def test_convert_token_to_idx_no_sentences():
     p.add_path(get_test_data_path_dict()['snli'])
     p.add_sent_processor(Tokenizer(tokenizer.tokenize))
     p.add_token_processor(AddToVocab())
-    # for sents in sample -> for token in sents = 2 for loops to token
-    p.add_post_processor(ConvertTokenToIdx(successive_for_loops_to_tokens=2))
+    p.add_post_processor(ConvertTokenToIdx())
     p.add_post_processor(SaveStateToList('idx'))
     state = p.execute()
 
@@ -365,8 +364,7 @@ def test_save_lengths():
     p = Pipeline('test_pipeline')
     p.add_path(get_test_data_path_dict()['snli'])
     p.add_sent_processor(Tokenizer(tokenizer.tokenize))
-    # for sents in sample -> sents = list of tokens = 1 for loop
-    p.add_post_processor(SaveLengthsToState(successive_for_loops_to_sentences=1))
+    p.add_post_processor(SaveLengthsToState())
     state = p.execute()
 
     lengths_inp = state['data']['lengths']['input']
@@ -401,19 +399,17 @@ def test_stream_to_hdf5():
     p = Pipeline('test_pipeline')
     p.add_path(get_test_data_path_dict()['snli'])
     p.add_sent_processor(Tokenizer(tokenizer.tokenize))
-    # for sents in sample -> sents = list of tokens = 1 for loop
-    p.add_post_processor(SaveLengthsToState(successive_for_loops_to_sentences=1))
+    p.add_post_processor(SaveLengthsToState())
     p.execute()
     p.clear_processors()
 
     # 2. Process the data further to stream it to hdf5
     p.add_sent_processor(Tokenizer(tokenizer.tokenize))
     p.add_token_processor(AddToVocab())
-    # for sents in sample -> for token in tokens = 2 for loop
-    p.add_post_processor(ConvertTokenToIdx(successive_for_loops_to_tokens=2))
+    p.add_post_processor(ConvertTokenToIdx())
     p.add_post_processor(SaveStateToList('idx'))
     # 2 samples per file -> 50 files
-    p.add_post_processor(StreamToHDF5(data_folder_name, successive_for_loops_to_sentences=1, samples_per_file=2))
+    p.add_post_processor(StreamToHDF5(data_folder_name, samples_per_file=2))
     state = p.execute()
 
     # 2. Load data from the SaveStateToList hook

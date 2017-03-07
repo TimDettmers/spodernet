@@ -2,9 +2,9 @@ from os.path import join
 
 import numpy as np
 
-from spodernet.logger import Logger
 from spodernet.util import get_data_path, numpy2hdf, make_dirs_if_not_exists
 
+from spodernet.logger import Logger
 log = Logger('processors.py.txt')
 
 class AbstractProcessor(object):
@@ -20,24 +20,32 @@ class AbstractProcessor(object):
         raise NotImplementedError('Classes that inherit from AbstractProcessor need to implement the process method')
 
 class AbstractLoopLevelTokenProcessor(AbstractProcessor):
-    def __init__(self, successive_for_loops_to_tokens=2):
+    def __init__(self):
         super(AbstractLoopLevelTokenProcessor, self).__init__()
-        self.successive_for_loops = successive_for_loops_to_tokens
+        self.successive_for_loops_to_tokens = None
 
     def process_token(self, token, inp_type):
         raise NotImplementedError('Classes that inherit from AbstractLoopLevelTokenProcessor need to implement the process_token method ')
 
     def process(self, sample, inp_type):
-        if self.successive_for_loops == 0:
+        if self.successive_for_loops_to_tokens == None:
+            i = 0
+            level = sample
+            while not (isinstance(level, basestring) or isinstance(level, long)):
+                    level = level[0]
+                    i+=1
+            self.successive_for_loops_to_tokens = i
+
+        if self.successive_for_loops_to_tokens == 0:
             ret = self.process_token(sample, inp_type)
 
-        elif self.successive_for_loops == 1:
+        elif self.successive_for_loops_to_tokens == 1:
             new_tokens = []
             for token in sample:
                 new_tokens.append(self.process_token(token, inp_type))
             ret = new_tokens
 
-        elif self.successive_for_loops == 2:
+        elif self.successive_for_loops_to_tokens == 2:
             new_sents = []
             for sent in sample:
                 new_tokens = []
@@ -49,18 +57,29 @@ class AbstractLoopLevelTokenProcessor(AbstractProcessor):
         return ret
 
 class AbstractLoopLevelListOfTokensProcessor(AbstractProcessor):
-    def __init__(self, successive_for_loops_to_tokens=1):
+    def __init__(self):
         super(AbstractLoopLevelListOfTokensProcessor, self).__init__()
-        self.successive_for_loops = successive_for_loops_to_tokens
+        self.successive_for_loops_to_list_of_tokens = None
 
     def process_list_of_tokens(self, tokens, inp_type):
         raise NotImplementedError('Classes that inherit from AbstractLoopLevelListOfTokensProcessor need to implement the process_list_of_tokens method ')
 
     def process(self, sample, inp_type):
-        if self.successive_for_loops == 0:
+        if self.successive_for_loops_to_list_of_tokens == None:
+            i = 0
+            level = sample
+            while not (isinstance(level, basestring)
+                       or isinstance(level, long)
+                       or isinstance(level, np.int64)):
+                    print(type(level))
+                    level = level[0]
+                    i+=1
+            self.successive_for_loops_to_list_of_tokens = i-1
+
+        if self.successive_for_loops_to_list_of_tokens == 0:
             ret = self.process_list_of_tokens(sample, inp_type)
 
-        elif self.successive_for_loops == 1:
+        elif self.successive_for_loops_to_list_of_tokens == 1:
             new_sents = []
             for sent in sample:
                 new_sents.append(self.process_list_of_tokens(sent, inp_type))
@@ -95,9 +114,8 @@ class ToLower(AbstractProcessor):
         return token.lower()
 
 class ConvertTokenToIdx(AbstractLoopLevelTokenProcessor):
-    def __init__(self, successive_for_loops_to_tokens=2, is_label=False):
-        super(ConvertTokenToIdx, self).__init__(successive_for_loops_to_tokens)
-        self.successive_for_loops = successive_for_loops_to_tokens
+    def __init__(self):
+        super(ConvertTokenToIdx, self).__init__()
 
     def process_token(self, token, inp_type):
         if inp_type != 'target':
@@ -124,8 +142,8 @@ class SaveStateToList(AbstractProcessor):
         return data
 
 class SaveLengthsToState(AbstractLoopLevelListOfTokensProcessor):
-    def __init__(self, successive_for_loops_to_sentences=1):
-        super(SaveLengthsToState, self).__init__(successive_for_loops_to_sentences)
+    def __init__(self):
+        super(SaveLengthsToState, self).__init__()
 
     def link_with_pipeline(self, state):
         self.state = state
@@ -140,8 +158,8 @@ class SaveLengthsToState(AbstractLoopLevelListOfTokensProcessor):
         return tokens
 
 class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
-    def __init__(self, name, successive_for_loops_to_sentences=1, samples_per_file=50000, max_length=None):
-        super(StreamToHDF5, self).__init__(successive_for_loops_to_sentences)
+    def __init__(self, name, samples_per_file=50000, max_length=None):
+        super(StreamToHDF5, self).__init__()
         self.max_length = max_length
         self.samples_per_file = samples_per_file
         self.path = join(get_data_path(), name)

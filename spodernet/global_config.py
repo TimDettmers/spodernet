@@ -1,6 +1,6 @@
 from collections import namedtuple
-from spodernet.logger import Logger
 
+from spodernet.logger import Logger
 log = Logger('global_config.py.txt')
 
 class Config:
