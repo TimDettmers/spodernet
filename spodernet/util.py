@@ -17,7 +17,7 @@ def numpy2hdf(path, data):
 
 def hdf2numpy(path, keyword='default'):
     '''Reads and returns a numpy array for a hdf5 file'''
-    log.debug('Reading hdf5 file from: {0}', path)
+    #log.debug('Reading hdf5 file from: {0}', path)
     h5file = h5py.File(path, 'r')
     dset = h5file.get(keyword)
     data = dset[:]
