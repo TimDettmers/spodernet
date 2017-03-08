@@ -163,40 +163,59 @@ class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
         super(StreamToHDF5, self).__init__()
         self.max_length = None
         self.samples_per_file = samples_per_file
-        self.path = join(get_data_path(), name)
-        make_dirs_if_not_exists(self.path)
-        self.shard_id = {'target' : 0, 'input' : 0, 'support' : 0}
-        self.data = {'target' : [], 'input' : [], 'support' : []}
-        self.num_samples = None
+        self.name = name
         self.idx = 0
+        self.shard_id = {'target' : 0, 'input' : 0, 'support' : 0}
+        self.data = {'target' : [], 'input' : [], 'support' : [], 'index' : []}
+        self.num_samples = None
+        self.config = {'paths' : [], 'sample_count' : []}
+        self.checked_for_lengths = False
+        self.paths = {}
 
     def link_with_pipeline(self, state):
         self.state = state
-        self.root = self.state['path']
+        self.base_path = join(self.state['path'], self.name)
+        make_dirs_if_not_exists(self.base_path)
+
+    def init_and_checks(self):
+        if 'lengths' not in self.state['data']:
+            log.error(('Do a first pass to produce lengths first, that is use the "SaveLengths" ',
+                       'processor, execute, clean processors, then rerun the pipeline with hdf5 streaming.'))
+        if self.num_samples == None:
+            self.num_samples = len(self.state['data']['lengths']['input'])
+        log.debug_once('Using type int32 for inputs and supports for now, but this may not be correct in the future')
+        self.checked_for_lengths = True
+        self.num_samples = len(self.state['data']['lengths']['input'])
 
     def process_list_of_tokens(self, tokens, inp_type):
-        if self.max_length is None:
-            if 'lengths' not in self.state['data']:
-                log.error(('Do a first pass to produce lengths first, that is use the "SaveLengths" ',
-                           'processor, execute, clean processors, then rerun the pipeline with hdf5 streaming.'))
-            if inp_type not in self.state['data']['lengths']:
-                log.error(('Do a first pass to produce lengths first, that is use the "SaveLengths" ',
-                           'processor, execute, clean processors, then rerun the pipeline with hdf5 streaming.'))
-            if self.num_samples == None:
-                self.num_samples = len(self.state['data']['lengths']['input'])
+        if not self.checked_for_lengths:
+            self.init_and_checks()
 
-            max_length = np.max(self.state['data']['lengths'][inp_type])
-            log.statistical('max length of the dataset: {0}', max_length)
-            log.debug_once('Using type int32 for inputs and supports for now, but this may not be correct in the future')
-            x = np.zeros((max_length), dtype=np.int32)
-            x[:len(tokens)] = tokens
-            if len(tokens) == 1:
-                self.data[inp_type].append(x[0])
-            else:
-                self.data[inp_type].append(x)
+        max_length = np.max(self.state['data']['lengths'][inp_type])
+        log.statistical('max length of the dataset: {0}', max_length)
+        x = np.zeros((max_length), dtype=np.int32)
+        x[:len(tokens)] = tokens
+        if len(tokens) == 1:
+            self.data[inp_type].append(x[0])
+        else:
+            self.data[inp_type].append(x)
+        if inp_type == 'target':
+            self.data['index'].append(self.idx)
+            self.idx += 1
 
-        if len(self.data[inp_type]) == self.samples_per_file or self.idx == self.num_samples:
+        if len(self.data[inp_type]) == self.samples_per_file:
             self.save_to_hdf5(inp_type)
+
+        if self.idx == self.num_samples:
+            counts = np.array(self.config['sample_count'])
+            fractions = counts / np.float32(np.sum(counts))
+            self.config['fractions'] = fractions.tolist()
+            self.config['counts'] = counts.tolist()
+            self.config['paths'] = []
+            for i in range(fractions.size):
+                self.config['paths'].append(self.paths[i])
+
+            pickle.dump(self.config, open(join(self.base_path, 'hdf5_config.pkl'), 'w'), pickle.HIGHEST_PROTOCOL)
 
         return tokens
 
@@ -204,14 +223,26 @@ class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
         idx = self.shard_id[inp_type]
         X = np.array(self.data[inp_type])
         file_name = inp_type + '_' + str(idx+1) + '.hdf5'
-        numpy2hdf(join(self.path, file_name), X)
+        numpy2hdf(join(self.base_path, file_name), X)
+        if idx not in self.paths: self.paths[idx] = []
+        self.paths[idx].append(join(self.base_path, file_name))
+
+        if inp_type == 'input':
+            self.config['sample_count'].append(X.shape[0])
 
         if inp_type != 'target':
             start = idx*self.samples_per_file
             end = (idx+1)*self.samples_per_file
             X_len = np.array(self.state['data']['lengths'][inp_type][start:end])
             file_name_len = inp_type + '_lengths_' + str(idx+1) + '.hdf5'
-            numpy2hdf(join(self.path, file_name_len), X_len)
+            numpy2hdf(join(self.base_path, file_name_len), X_len)
+            self.paths[idx].append(join(self.base_path, file_name_len))
+        else:
+            file_name_index = 'index_' + str(idx+1) + '.hdf5'
+            numpy2hdf(join(self.base_path, file_name_index), np.arange(self.idx - X.shape[0], self.idx))
+            self.paths[idx].append(join(self.base_path, file_name_index))
+
+
 
         self.shard_id[inp_type] += 1
         del self.data[inp_type][:]
@@ -224,17 +255,15 @@ class CreateBinsByNestedLength(AbstractLoopLevelListOfTokensProcessor):
         self.min_batch_size = min_batch_size
         self.pure_bins = bins_of_same_length
         self.raise_fraction = raise_on_throw_away_fraction
-        self.bin_fractions = []
-        self.bin_idx2length_tuple = {}
         self.length_key2bin_idx = {}
         self.performed_search = False
         self.name = name
         self.max_sample_idx = -1
-        self.inp_type2idx = {'support' : 0, 'input' : 0}
-        self.idx2data = {'support' : {}, 'input' : {}}
-        self.binidx2data = {'support' : {}, 'input' : {}}
+        self.inp_type2idx = {'support' : 0, 'input' : 0, 'target' : 0}
+        self.idx2data = {'support' : {}, 'input' : {}, 'target' : {}}
+        self.binidx2data = {'support' : {}, 'input' : {}, 'index' : {}, 'target' : {}}
         self.binidx2bincount = {}
-        self.binidx2numprocessed = {'support' : {}, 'input' : {}}
+        self.binidx2numprocessed = {'support' : {}, 'input' : {}, 'target' : {}}
 
     def link_with_pipeline(self, state):
         self.state = state
@@ -243,7 +272,6 @@ class CreateBinsByNestedLength(AbstractLoopLevelListOfTokensProcessor):
         make_dirs_if_not_exists(self.base_path)
 
     def process_list_of_tokens(self, tokens, inp_type):
-        if inp_type not in self.inp_type2idx: return tokens
         if 'lengths' not in self.state['data']:
             log.error(('Do a first pass to produce lengths first, that is use the "SaveLengths" ',
                        'processor, execute, clean processors, then rerun the pipeline with this module.'))
@@ -261,9 +289,10 @@ class CreateBinsByNestedLength(AbstractLoopLevelListOfTokensProcessor):
 
         idx = self.inp_type2idx[inp_type]
         self.idx2data[inp_type][idx] = tokens
-        if idx in self.idx2data['input'] and idx in self.idx2data['support']:
+        if idx in self.idx2data['input'] and idx in self.idx2data['support'] and idx in self.idx2data['target']:
             x1 = self.idx2data['input'][idx]
             x2 = self.idx2data['support'][idx]
+            t = self.idx2data['target'][idx]
             l1 = len(x1)
             l2 = len(x2)
             key = str(l1) + ',' + str(l2)
@@ -273,30 +302,51 @@ class CreateBinsByNestedLength(AbstractLoopLevelListOfTokensProcessor):
             bin_idx = self.length_key2bin_idx[key]
             self.binidx2data['input'][bin_idx].append(np.array(x1))
             self.binidx2data['support'][bin_idx].append(np.array(x2))
+            self.binidx2data['index'][bin_idx].append(idx)
+            self.binidx2data['target'][bin_idx].append(np.array(t))
             self.binidx2numprocessed[bin_idx] += 1
             self.inp_type2idx[inp_type] += 1
 
             if (len(self.binidx2data['input']) % 100 == 0
-                    or (     self.binidx2numprocessed[bin_idx] == self.binidx2bincount[bin_idx]
+               or (self.binidx2numprocessed[bin_idx] == self.binidx2bincount[bin_idx]
                          and len(self.binidx2data['input'][bin_idx]) > 0)):
                 X_new = np.array(self.binidx2data['input'][bin_idx])
                 S_new = np.array(self.binidx2data['support'][bin_idx])
+                idx_new = np.array(self.binidx2data['index'][bin_idx])
+                t_new = np.array(self.binidx2data['target'][bin_idx])
+
                 pathX = join(self.base_path, 'input_bin_{0}.hdf5'.format(bin_idx))
                 pathS = join(self.base_path, 'support_bin_{0}.hdf5'.format(bin_idx))
+                pathX_len = join(self.base_path, 'input_lengths_bin_{0}.hdf5'.format(bin_idx))
+                pathS_len = join(self.base_path, 'support_lengths_bin_{0}.hdf5'.format(bin_idx))
+                pathIdx = join(self.base_path, 'index_bin_{0}.hdf5'.format(bin_idx))
+                pathT = join(self.base_path, 'target_bin_{0}.hdf5'.format(bin_idx))
+
                 if os.path.exists(pathX):
                     X_old = hdf2numpy(pathX)
                     S_old = hdf2numpy(pathS)
+                    idx_old = hdf5numpy(pathIdx)
+                    t_old = hdf5numpy(pathT)
                     X = np.vstack([X_old, X_new])
                     S = np.vstack([S_old, S_new])
+                    index = np.vstack([idx_old, idx_new])
+                    T = np.vstack([t_old, t_new])
                 else:
                     X = X_new
                     S = S_new
-
+                    index = idx_new
+                    T = t_new
 
                 numpy2hdf(pathX, X)
                 numpy2hdf(pathS, S)
+                numpy2hdf(pathX_len, np.ones((X.shape[0]))*X.shape[1])
+                numpy2hdf(pathS_len, np.ones((S.shape[0]))*S.shape[1])
+                numpy2hdf(pathIdx, index)
+                numpy2hdf(pathT, T)
                 del self.binidx2data['input'][bin_idx][:]
                 del self.binidx2data['support'][bin_idx][:]
+                del self.binidx2data['index'][bin_idx][:]
+                del self.binidx2data['target'][bin_idx][:]
 
         else:
             self.inp_type2idx[inp_type] += 1
@@ -312,22 +362,32 @@ class CreateBinsByNestedLength(AbstractLoopLevelListOfTokensProcessor):
         if self.pure_bins:
             self.wasted_lengths, self.length_tuple2bin_size = self.calculate_wastes(l1, l2)
 
-        total_count = 0.0
-        for i, ((l1, l2), count) in enumerate(self.length_tuple2bin_size):
-            total_count += count
-
+        config = {'paths' : [], 'path2len' : {}, 'path2count' : {}}
+        counts = []
         for i, ((l1, l2), count) in enumerate(self.length_tuple2bin_size):
             key = str(l1) + ',' + str(l2)
             self.length_key2bin_idx[key] = i
             self.binidx2data['input'][i] = []
             self.binidx2data['support'][i] = []
+            self.binidx2data['index'][i] = []
+            self.binidx2data['target'][i] = []
             self.binidx2numprocessed[i] = 0
             self.binidx2bincount[i] = count
-            self.bin_idx2length_tuple[i] = [(l1, l2), count]
-            self.bin_fractions.append(count/total_count)
-        config = {}
-        config['bin_fractions'] = self.bin_fractions
-        config['bin_idx2length_tuple'] = self.bin_idx2length_tuple
+            counts.append(count)
+            pathX = join(self.base_path, 'input_bin_{0}.hdf5'.format(i))
+            pathS = join(self.base_path, 'support_bin_{0}.hdf5'.format(i))
+            pathX_len = join(self.base_path, 'input_lengths_bin_{0}.hdf5'.format(i))
+            pathS_len = join(self.base_path, 'support_lengths_bin_{0}.hdf5'.format(i))
+            pathIdx = join(self.base_path, 'index_bin_{0}.hdf5'.format(i))
+            pathT = join(self.base_path, 'target_bin_{0}.hdf5'.format(i))
+            config['paths'].append([pathX, pathS, pathX_len, pathS_len, pathT, pathIdx])
+            config['path2len'][pathX] = l1
+            config['path2len'][pathS] = l2
+            config['path2count'][pathX] = count
+            config['path2count'][pathS] = count
+
+        config['fractions'] = (np.float64(np.array(counts)) / np.sum(counts))
+        config['counts'] = counts
         self.config = config
         pickle.dump(config, open(join(self.base_path, 'bin_config.pkl'), 'w'), pickle.HIGHEST_PROTOCOL)
 
