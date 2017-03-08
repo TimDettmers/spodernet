@@ -217,17 +217,21 @@ class Batcher(object):
             raise StopIteration()
 
 class DataLoaderSlave(Thread):
-    def __init__(self, stream_batcher, batchidx2paths, batchidx2start_end, randomize=False):
+    def __init__(self, stream_batcher, batchidx2paths, batchidx2start_end, randomize=False, paths=None, shard2batchidx=None, seed=None, shard_fractions=None):
         super(DataLoaderSlave, self).__init__()
+        if randomize:
+            assert seed is not None, 'For randomized data loadingg a seed needs to be set!'
         self.daemon = True
         self.stream_batcher = stream_batcher
         self.batchidx2paths = batchidx2paths
         self.batchidx2start_end = batchidx2start_end
         self.current_data = {}
-
-        if randomize:
-            raise NotImplementedError('Randomized sampling from files not yet implemented!')
-
+        self.randomize = randomize
+        self.num_batches = len(batchidx2paths.keys())
+        self.rdm = np.random.RandomState(234)
+        self.shard_fractions = shard_fractions
+        self.shard2batchidx = shard2batchidx
+        self.paths = paths
 
     def load_files_if_needed(self, current_paths):
         if isinstance(current_paths[0], list):
@@ -274,11 +278,24 @@ class DataLoaderSlave(Thread):
     def run(self):
         while True:
             batch_idx = self.stream_batcher.work.get()
-            current_paths = self.batchidx2paths[batch_idx]
-            start, end = self.batchidx2start_end[batch_idx]
 
-            self.load_files_if_needed(current_paths)
-            batch_parts = self.create_batch_parts(current_paths, start, end)
+            if self.randomize:
+                shard_idx = self.rdm.choice(len(self.shard2batchidx.keys()), 1, p=self.shard_fractions)[0]
+                current_paths = self.paths[shard_idx]
+
+                self.load_files_if_needed(current_paths)
+
+                n = self.current_data[current_paths[0]].shape[0]
+                start = self.rdm.randint(0, n-self.stream_batcher.batch_size)
+                end = start + self.stream_batcher.batch_size
+
+                batch_parts = self.create_batch_parts(current_paths, start, end)
+            else:
+                current_paths = self.batchidx2paths[batch_idx]
+                start, end = self.batchidx2start_end[batch_idx]
+
+                self.load_files_if_needed(current_paths)
+                batch_parts = self.create_batch_parts(current_paths, start, end)
 
             # pass data to streambatcher
             self.stream_batcher.prepared_batches[batch_idx] = batch_parts
@@ -303,10 +320,13 @@ class StreamBatcher(object):
         self.work = Queue()
         self.cached_batches = {}
 
-        batchidx2paths, batchidx2start_end = self.create_batchidx_maps(config['counts'])
+        batchidx2paths, batchidx2start_end, shard2batchidx = self.create_batchidx_maps(config['counts'])
 
         for i in range(loader_threads):
-            self.loaders.append(DataLoaderSlave(self, batchidx2paths, batchidx2start_end, randomize))
+            seed = None
+            if randomize:
+                seed = 23432435345 % ((i+1)*17)
+            self.loaders.append(DataLoaderSlave(self, batchidx2paths, batchidx2start_end, randomize, self.paths, shard2batchidx, seed, self.fractions))
             self.loaders[-1].start()
 
         while self.prefetch_batch_idx < loader_threads:
@@ -318,6 +338,7 @@ class StreamBatcher(object):
         counts_cumulative_offset = np.cumsum([0] + counts)
         batchidx2paths = {}
         batchidx2start_end = {}
+        shard2batchidx = { 0 : []}
         paths = self.paths
         file_idx = 0
         for i in range(self.num_batches):
@@ -328,14 +349,18 @@ class StreamBatcher(object):
                 end_big_batch = end - counts_cumulative_offset[file_idx+1]
                 batchidx2start_end[i] = ((start_big_batch, None), (None, end_big_batch))
                 batchidx2paths[i] = (paths[file_idx], paths[file_idx+1])
+
+                shard2batchidx[file_idx].append(i)
                 file_idx += 1
+                shard2batchidx[file_idx] = [i]
             else:
                 start_big_batch = start - counts_cumulative_offset[file_idx]
                 end_big_batch = end - counts_cumulative_offset[file_idx]
                 batchidx2start_end[i] = (start_big_batch, end_big_batch)
                 batchidx2paths[i] = paths[file_idx]
+                shard2batchidx[file_idx].append(i)
 
-        return batchidx2paths, batchidx2start_end
+        return batchidx2paths, batchidx2start_end, shard2batchidx
 
 
     def get_next_batch_parts(self):

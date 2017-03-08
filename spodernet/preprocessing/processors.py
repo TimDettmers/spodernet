@@ -380,7 +380,7 @@ class CreateBinsByNestedLength(AbstractLoopLevelListOfTokensProcessor):
             pathS_len = join(self.base_path, 'support_lengths_bin_{0}.hdf5'.format(i))
             pathIdx = join(self.base_path, 'index_bin_{0}.hdf5'.format(i))
             pathT = join(self.base_path, 'target_bin_{0}.hdf5'.format(i))
-            config['paths'].append([pathX, pathS, pathX_len, pathS_len, pathT, pathIdx])
+            config['paths'].append([pathX, pathX_len, pathS, pathS_len, pathT, pathIdx])
             config['path2len'][pathX] = l1
             config['path2len'][pathS] = l2
             config['path2count'][pathX] = count
