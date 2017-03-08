@@ -228,52 +228,63 @@ class DataLoaderSlave(Thread):
         if randomize:
             raise NotImplementedError('Randomized sampling from files not yet implemented!')
 
+
+    def load_files_if_needed(self, current_paths):
+        if isinstance(current_paths[0], list):
+            for paths in current_paths:
+                for path in paths:
+                    if path not in self.current_data:
+                        self.current_data[path] = hdf2numpy(path)
+        else:
+            for path in current_paths:
+                if path not in self.current_data:
+                    self.current_data[path] = hdf2numpy(path)
+
+    def create_batch_parts(self, current_paths, start, end):
+        # index loaded data for minibatch
+        batch_parts = []
+        if isinstance(current_paths[0], list):
+            start = start[0]
+            end = end[1]
+            for i in range(len(current_paths[0])):
+                x1 = self.current_data[current_paths[0][i]][start:]
+                x2 = self.current_data[current_paths[1][i]][:end]
+                if len(x1.shape) == 1:
+                    x = np.hstack([x1, x2])
+                else:
+                    x = np.vstack([x1, x2])
+                batch_parts.append(x)
+        else:
+            for path in current_paths:
+                batch_parts.append(self.current_data[path][start:end])
+
+        return batch_parts
+
+    def clean_cache(self, current_paths):
+        # delete unused cached data
+        if isinstance(current_paths[0], list):
+            current_paths = current_paths[0] + current_paths[1]
+
+
+        for old_path in self.current_data.keys():
+            if old_path not in current_paths:
+                self.current_data.pop(old_path, None)
+
+
     def run(self):
         while True:
             batch_idx = self.stream_batcher.work.get()
             current_paths = self.batchidx2paths[batch_idx]
             start, end = self.batchidx2start_end[batch_idx]
-            batch_parts = []
-            print('PREPARING BATCH NO: {0}'.format(batch_idx))
 
-            # index loaded data for minibatch
-            if isinstance(current_paths[0], list):
-                # overlapping batch between two files
-                for paths in current_paths:
-                    for path in paths:
-                        if path not in self.current_data:
-                            self.current_data[path] = hdf2numpy(path)
-
-                start = start[0]
-                end = end[1]
-                for i in range(len(current_paths[0])):
-                    x1 = self.current_data[current_paths[0][i]][start:]
-                    x2 = self.current_data[current_paths[1][i]][:end]
-                    if len(x1.shape) == 1:
-                        print(x1.shape, x2.shape)
-                        x = np.hstack([x1, x2])
-                    else:
-                        x = np.vstack([x1, x2])
-                    batch_parts.append(x)
-            else:
-                for path in current_paths:
-                    if path not in self.current_data:
-                        self.current_data[path] = hdf2numpy(path)
-                    batch_parts.append(self.current_data[path][start:end])
+            self.load_files_if_needed(current_paths)
+            batch_parts = self.create_batch_parts(current_paths, start, end)
 
             # pass data to streambatcher
             self.stream_batcher.prepared_batches[batch_idx] = batch_parts
             self.stream_batcher.prepared_batchidx.put(batch_idx)
 
-            # delete unused cached data
-            if isinstance(current_paths[0], list):
-                paths = current_paths[0] + current_paths[1]
-
-            for old_path in self.current_data.keys():
-                if old_path not in current_paths:
-                    self.current_data.pop(old_path, None)
-
-
+            self.clean_cache(current_paths)
 
 
 class StreamBatcher(object):
@@ -295,7 +306,7 @@ class StreamBatcher(object):
         batchidx2paths, batchidx2start_end = self.create_batchidx_maps(config['counts'])
 
         for i in range(loader_threads):
-            self.loaders.append(DataLoaderSlave(self, batchidx2paths, batchidx2start_end))
+            self.loaders.append(DataLoaderSlave(self, batchidx2paths, batchidx2start_end, randomize))
             self.loaders[-1].start()
 
         while self.prefetch_batch_idx < loader_threads:
