@@ -276,7 +276,7 @@ class CreateBinsByNestedLength(AbstractLoopLevelListOfTokensProcessor):
             self.binidx2numprocessed[bin_idx] += 1
             self.inp_type2idx[inp_type] += 1
 
-            if (self.binidx2numprocessed[bin_idx] % 100 == 0
+            if (len(self.binidx2data['input']) % 100 == 0
                     or (     self.binidx2numprocessed[bin_idx] == self.binidx2bincount[bin_idx]
                          and len(self.binidx2data['input'][bin_idx]) > 0)):
                 X_new = np.array(self.binidx2data['input'][bin_idx])
@@ -298,7 +298,6 @@ class CreateBinsByNestedLength(AbstractLoopLevelListOfTokensProcessor):
                 del self.binidx2data['input'][bin_idx][:]
                 del self.binidx2data['support'][bin_idx][:]
 
-            self.inp_type2idx[inp_type] += 1
         else:
             self.inp_type2idx[inp_type] += 1
 
@@ -348,6 +347,7 @@ class CreateBinsByNestedLength(AbstractLoopLevelListOfTokensProcessor):
         # look how many bins of l2 (support) are smaller than the min_batch_size
         wasted_lengths = []
         bin_by_size = []
+        total_bin_count = 0.0
         for idx in indices:
             l1_waste = lengths[idx]
             l2_index = np.where(l1==l1_waste)[0]
@@ -359,6 +359,7 @@ class CreateBinsByNestedLength(AbstractLoopLevelListOfTokensProcessor):
             for length, bin_count in zip(lengths2, l2_counts):
                 if bin_count >= self.min_batch_size:
                     bin_by_size.append(((l1_waste, length), bin_count))
+                    total_bin_count += bin_count
             l2_waste = lengths2[l2_counts < self.min_batch_size]
             wasted_lengths.append([l1_waste, l2_waste])
             wasted_samples += np.sum(l2_counts[l2_counts < self.min_batch_size])
@@ -369,6 +370,7 @@ class CreateBinsByNestedLength(AbstractLoopLevelListOfTokensProcessor):
 
         # assign this here for testing purposes
         self.wasted_fraction = wasted_fraction
+        self.total_bin_count = total_bin_count
 
         return wasted_lengths, bin_by_size
 

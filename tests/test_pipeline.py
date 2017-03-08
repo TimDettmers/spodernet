@@ -473,6 +473,10 @@ def test_bin_search():
     tokenizer = nltk.tokenize.WordPunctTokenizer()
     data_folder_name = 'snli10k_bins'
     total_samples = 10000.0
+    base_path = join(get_data_path(), 'test_pipeline', data_folder_name)
+    # clean all data from previous failed tests   
+    if os.path.exists(base_path):
+        shutil.rmtree(base_path)
 
     # 1. Setup pipeline to save lengths and generate vocabulary
     p = Pipeline('test_pipeline')
@@ -498,7 +502,6 @@ def test_bin_search():
     #    additional verification of correctness.
 
     # 3.1 Test config equality
-    base_path = join(get_data_path(), 'test_pipeline', data_folder_name)
     config_path = join(base_path, 'bin_config.pkl')
     print(base_path)
     print(os.path.exists(base_path))
@@ -518,12 +521,12 @@ def test_bin_search():
             assert False, 'A list or dictionary instance was expected!'
 
     assert len(bin_creator.bin_idx2length_tuple.keys()) > 0, 'Config indicates no bin files were created!'
-    num_idxs = np.max(bin_creator.bin_idx2length_tuple.keys())
+    num_idxs = np.max(bin_creator.bin_idx2length_tuple.keys())+1
     paths_inp = [join(base_path, 'input_bin_{0}.hdf5'.format(i)) for i in range(num_idxs)]
     paths_sup = [join(base_path, 'support_bin_{0}.hdf5'.format(i)) for i in range(num_idxs)]
 
     # 3.2 Test length, count and total count equality
-    num_samples_bins = total_samples*(1.0-bin_creator.wasted_fraction)
+    num_samples_bins = bin_creator.total_bin_count
     cumulative_count = 0.0
     for i, (path_inp, path_sup) in enumerate(zip(paths_inp, paths_sup)):
         inp = hdf2numpy(path_inp)
@@ -532,15 +535,13 @@ def test_bin_search():
         expected_bin_fraction = count/num_samples_bins
         actual_bin_fraction = bin_creator.bin_fractions[i]
         assert actual_bin_fraction == expected_bin_fraction, 'Bin fraction for bin {0} not equal'.format(i)
-        print(inp.shape)
-        print(count, l1, l2)
-        print(path_inp)
         assert inp.shape[0] == count, 'Count for input bin at {0} not as expected'.format(path_inp)
         assert sup.shape[0] == count, 'Count for support bin at {0} not as expected'.format(path_sup)
         assert inp.shape[1] == l1, 'Input data sequence length for {0} not as expected'.format(path_inp)
-        assert inp.shape[2] == l2, 'Support data sequence length for {0} not as expected'.format(path_sup)
-        assert bin_fraction
+        assert sup.shape[1] == l2, 'Support data sequence length for {0} not as expected'.format(path_sup)
         cumulative_count += count
 
     assert cumulative_count == num_samples_bins, 'Number of total bin samples not as expected!'
+
+    shutil.rmtree(base_path)
 
