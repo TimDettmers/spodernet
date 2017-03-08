@@ -1,9 +1,15 @@
 from torch.autograd import Variable
+from os.path import join
+from Queue import Queue
+from threading import Thread
 
 import time
 import datetime
 import numpy as np
 import torch
+import cPickle as pickle
+
+from spodernet.util import get_data_path, hdf2numpy
 
 class Batcher(object):
     '''Takes data and creates batches over which one can iterate.'''
@@ -84,9 +90,6 @@ class Batcher(object):
         counts, bin_borders = np.histogram(x1, bins=bin_count)
         fractions = counts/np.sum(counts)
         idx = (fractions < discard_threshold) * (counts > min_bin_count)
-        #print(len(counts), len(bin_borders), bin_borders)
-        #print(counts, fractions)
-        #print(np.min(x1), np.max(x1))
         bins_start = bin_borders[:-1][idx]
         bins_end = bin_borders[1:][idx]
         indices = []
@@ -212,3 +215,144 @@ class Batcher(object):
             self.t0 = time.time()
             print('EPOCH: {0}'.format(self.epoch))
             raise StopIteration()
+
+class DataLoaderSlave(Thread):
+    def __init__(self, stream_batcher, batchidx2paths, batchidx2start_end, randomize=False):
+        super(DataLoaderSlave, self).__init__()
+        self.daemon = True
+        self.stream_batcher = stream_batcher
+        self.batchidx2paths = batchidx2paths
+        self.batchidx2start_end = batchidx2start_end
+        self.current_data = {}
+
+        if randomize:
+            raise NotImplementedError('Randomized sampling from files not yet implemented!')
+
+    def run(self):
+        while True:
+            batch_idx = self.stream_batcher.work.get()
+            current_paths = self.batchidx2paths[batch_idx]
+            start, end = self.batchidx2start_end[batch_idx]
+            batch_parts = []
+            print('PREPARING BATCH NO: {0}'.format(batch_idx))
+
+            # index loaded data for minibatch
+            if isinstance(current_paths[0], list):
+                # overlapping batch between two files
+                for paths in current_paths:
+                    for path in paths:
+                        if path not in self.current_data:
+                            self.current_data[path] = hdf2numpy(path)
+
+                start = start[0]
+                end = end[1]
+                for i in range(len(current_paths[0])):
+                    x1 = self.current_data[current_paths[0][i]][start:]
+                    x2 = self.current_data[current_paths[1][i]][:end]
+                    if len(x1.shape) == 1:
+                        print(x1.shape, x2.shape)
+                        x = np.hstack([x1, x2])
+                    else:
+                        x = np.vstack([x1, x2])
+                    batch_parts.append(x)
+            else:
+                for path in current_paths:
+                    if path not in self.current_data:
+                        self.current_data[path] = hdf2numpy(path)
+                    batch_parts.append(self.current_data[path][start:end])
+
+            # pass data to streambatcher
+            self.stream_batcher.prepared_batches[batch_idx] = batch_parts
+            self.stream_batcher.prepared_batchidx.put(batch_idx)
+
+            # delete unused cached data
+            if isinstance(current_paths[0], list):
+                paths = current_paths[0] + current_paths[1]
+
+            for old_path in self.current_data.keys():
+                if old_path not in current_paths:
+                    self.current_data.pop(old_path, None)
+
+
+
+
+class StreamBatcher(object):
+    def __init__(self, pipeline_name, name, batch_size, loader_threads=8, randomize=False):
+        config_path = join(get_data_path(), pipeline_name, name, 'hdf5_config.pkl')
+        config = pickle.load(open(config_path))
+        self.paths = config['paths']
+        self.fractions = config['fractions']
+        self.num_batches = np.sum(config['counts']) / batch_size
+        self.batch_size = batch_size
+        self.batch_idx = 0
+        self.prefetch_batch_idx = 0
+        self.loaders = []
+        self.prepared_batches = {}
+        self.prepared_batchidx = Queue()
+        self.work = Queue()
+        self.cached_batches = {}
+
+        batchidx2paths, batchidx2start_end = self.create_batchidx_maps(config['counts'])
+
+        for i in range(loader_threads):
+            self.loaders.append(DataLoaderSlave(self, batchidx2paths, batchidx2start_end))
+            self.loaders[-1].start()
+
+        while self.prefetch_batch_idx < loader_threads:
+            self.work.put(self.prefetch_batch_idx)
+            self.prefetch_batch_idx += 1
+
+    def create_batchidx_maps(self, counts):
+        counts_cumulative = np.cumsum(counts)
+        counts_cumulative_offset = np.cumsum([0] + counts)
+        batchidx2paths = {}
+        batchidx2start_end = {}
+        paths = self.paths
+        file_idx = 0
+        for i in range(self.num_batches):
+            start = i*self.batch_size
+            end = (i+1)*self.batch_size
+            if end > counts_cumulative[file_idx] and file_idx+1 < len(paths):
+                start_big_batch = start - counts_cumulative_offset[file_idx]
+                end_big_batch = end - counts_cumulative_offset[file_idx+1]
+                batchidx2start_end[i] = ((start_big_batch, None), (None, end_big_batch))
+                batchidx2paths[i] = (paths[file_idx], paths[file_idx+1])
+                file_idx += 1
+            else:
+                start_big_batch = start - counts_cumulative_offset[file_idx]
+                end_big_batch = end - counts_cumulative_offset[file_idx]
+                batchidx2start_end[i] = (start_big_batch, end_big_batch)
+                batchidx2paths[i] = paths[file_idx]
+
+        return batchidx2paths, batchidx2start_end
+
+
+    def get_next_batch_parts(self):
+        if self.batch_idx in self.cached_batches:
+            return self.cached_batches.pop(self.batch_idx)
+        else:
+            batch_idx = self.prepared_batchidx.get()
+            if self.batch_idx == batch_idx:
+                return self.prepared_batches.pop(self.batch_idx)
+            else:
+                self.cached_batches[batch_idx] = self.prepared_batches.pop(batch_idx)
+                return self.get_next_batch_parts()
+
+    def __iter__(self):
+        return self
+
+    def next(self):
+        if self.batch_idx + 1 < self.num_batches:
+            batch_parts = self.get_next_batch_parts()
+            print(self.num_batches)
+
+            self.batch_idx += 1
+            self.work.put(self.prefetch_batch_idx)
+            self.prefetch_batch_idx +=1
+            if self.prefetch_batch_idx == self.num_batches:
+                self.prefetch_batch_idx = 0
+            return batch_parts
+        else:
+            self.batch_idx = 0
+            raise StopIteration()
+
