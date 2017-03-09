@@ -1,7 +1,7 @@
 from os.path import join
 
 import os
-import json
+import simplejson as json
 
 from spodernet.preprocessing.vocab import Vocab
 
@@ -18,9 +18,13 @@ class Pipeline(object):
         home = os.environ['HOME']
         self.root = join(home, '.data', name)
         if not os.path.exists(self.root):
+            log.debug_once('Pipeline path {0} does not exist. Creating folder...', self.root)
             os.mkdir(self.root)
+        else:
+            log.debug_once('Pipeline path {0} does exist', self.root)
+
         self.state = {'name' : name, 'home' : home, 'path' : self.root, 'data' : {}}
-        self.state['vocab'] = Vocab(path=self.root)
+        self.state['vocab'] = Vocab(path=join(self.root, 'vocab'))
 
     def add_text_processor(self, text_processor):
         text_processor.link_with_pipeline(self.state)
@@ -51,9 +55,9 @@ class Pipeline(object):
         for line in open(path):
             # we have comma separated files
             inp, support, target = json.loads(line)
-            log.statistical('this is some input in text format {0}', inp)
-            log.statistical('this is a support in text format {0}', support)
-            log.statistical('this is a target in text format {0}', target)
+            log.statistical('this is some input in text format {0}', 0.0001, inp)
+            log.statistical('this is a support in text format {0}', 0.0001, support)
+            log.statistical('this is a target in text format {0}', 0.0001, target)
             yield inp, support, target
 
     def clear_processors(self):
@@ -61,6 +65,20 @@ class Pipeline(object):
         self.sent_processors = []
         self.token_processors = []
         self.text_processors = []
+        log.debug('Cleared processors of pipeline {0}', self.state['name'])
+
+    def clear_paths(self):
+        self.paths = []
+
+    def add_vocab(self, pipeline_or_vocab):
+        if isinstance(pipeline_or_vocab, Pipeline):
+            self.state['vocab'] = pipeline_or_vocab.state['vocab']
+        elif isinstance(pipeline_or_vocab, Vocab):
+            self.state['vocab'] = pipeline_or_vocab
+        else:
+            str_error = 'The add vocab method expects a Pipeline or Vocab instance as argument, got {0} instead!'.format(type(pipeline_or_vocab))
+            log.error(str_error)
+            raise TypeError(str_error)
 
     def execute(self):
         '''Tokenizes the data, calcs the max length, and creates a vocab.'''

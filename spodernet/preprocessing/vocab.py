@@ -26,11 +26,11 @@ class Vocab(object):
             self.idx2label[idx] = labels[idx]
 
         # out of vocabulary token
-        token2idx['OOV'] = -1
-        idx2token[-1] = 'OOV'
+        token2idx['OOV'] = 0
+        idx2token[0] = 'OOV'
         # empty = 0
-        token2idx[''] = 0
-        idx2token[0] = ''
+        token2idx[''] = 1
+        idx2token[1] = ''
 
         self.token2idx = token2idx
         self.idx2token = idx2token
@@ -38,10 +38,10 @@ class Vocab(object):
         if len(idx2token.keys()) > 0:
             self.next_idx = np.max(idx2token.keys()) + 1
         else:
-            self.next_idx = 1
+            self.next_idx = 2
 
         if len(self.idx2label.keys()) > 0:
-            self.next_label_idx = np.max(self.idx2label.keys()) + 1
+            self.next_label_2dx = np.max(self.idx2label.keys()) + 1
         else:
             self.next_label_idx = 0
 

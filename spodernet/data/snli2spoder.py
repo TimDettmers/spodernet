@@ -4,7 +4,7 @@ import os
 from os.path import join
 import urllib
 import zipfile
-import json
+import simplejson as json
 
 
 def download_snli():

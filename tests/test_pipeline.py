@@ -5,7 +5,7 @@ import uuid
 import os
 import nltk
 import pytest
-import json
+import simplejson as json
 import numpy as np
 import shutil
 import cPickle as pickle
@@ -16,6 +16,7 @@ from spodernet.preprocessing.processors import StreamToHDF5, CreateBinsByNestedL
 from spodernet.preprocessing.vocab import Vocab
 from spodernet.preprocessing.batching import StreamBatcher
 from spodernet.util import get_data_path, hdf2numpy
+from spodernet.global_config import Config, Backends
 
 from spodernet.logger import Logger, LogLevel
 
@@ -23,6 +24,8 @@ log = Logger('test_pipeline.py.txt')
 
 Logger.GLOBAL_LOG_LEVEL = LogLevel.STATISTICAL
 Logger.LOG_PROPABILITY = 0.1
+
+Config.backend = Backends.NUMPY
 
 def get_test_data_path_dict():
     paths = {}
@@ -45,8 +48,8 @@ def test_tokenization():
     inp_sents = state['data']['tokens']['input']
     sup_sents = state['data']['tokens']['support']
     sents = inp_sents + sup_sents
-    log.statistical('input sentence of tokens: {0}', inp_sents[0])
-    log.statistical('support sentence of tokens: {0}', sup_sents[0])
+    log.statistical('input sentence of tokens: {0}', 0.5, inp_sents[0])
+    log.statistical('support sentence of tokens: {0}', 0.5, sup_sents[0])
 
     # 2. setup nltk tokenization
     with open(get_test_data_path_dict()['snli']) as f:
@@ -55,8 +58,8 @@ def test_tokenization():
             inp, sup, t = json.loads(line)
             tokenized_sents['input'].append(tokenizer.tokenize(inp))
             tokenized_sents['support'].append(tokenizer.tokenize(sup))
-            log.statistical('input sentence of tokens: {0}', tokenized_sents['input'][-1])
-            log.statistical('support sentence of tokens: {0}', tokenized_sents['support'][-1])
+            log.statistical('input sentence of tokens: {0}', 0.01, tokenized_sents['input'][-1])
+            log.statistical('support sentence of tokens: {0}', 0.01, tokenized_sents['support'][-1])
 
     sents_nltk = tokenized_sents['input'] + tokenized_sents['support']
     # 3. test equality
@@ -64,10 +67,10 @@ def test_tokenization():
     log.debug('count should be 200: {0}', len(sents))
     for sent1, sent2 in zip(sents, sents_nltk):
         assert len(sent1) == len(sent2), 'Token count differs!'
-        log.statistical('a sentence of tokens: {0}', sent1)
+        log.statistical('a sentence of tokens: {0}', 0.01, sent1)
         for token1, token2 in zip(sent1, sent2):
             assert token1 == token2, 'Token values differ!'
-            log.statistical('a token: {0}', token1)
+            log.statistical('a token: {0}', 0.001, token1)
 
 def test_path_creation():
     names = []
@@ -96,12 +99,12 @@ def test_vocab():
     # 1. use Vocab manually and test it against manual vocabulary
     idx2token = {}
     token2idx = {}
-    token2idx['OOV'] = -1
-    idx2token[-1] = 'OOV'
+    token2idx['OOV'] = 0
+    idx2token[0] = 'OOV'
     # empty = 0
-    token2idx[''] = 0
-    idx2token[0] = ''
-    idx = 1
+    token2idx[''] = 1
+    idx2token[1] = ''
+    idx = 2
     v = Vocab('test')
     with open(get_test_data_path_dict()['snli']) as f:
         tokenized_sents = {'input' : [], 'support' : []}
@@ -114,8 +117,8 @@ def test_vocab():
                     token2idx[token] = idx
                     idx2token[idx] = token
                     idx += 1
-                    log.statistical('uncommon word if high number: {0}, {1}', token, idx)
-                    log.statistical('uncommon word if high number: {0}, {1}', token, v.get_idx(token))
+                    log.statistical('uncommon word if high number: {0}, {1}', 0.001, token, idx)
+                    log.statistical('uncommon word if high number: {0}, {1}', 0.001, token, v.get_idx(token))
 
             for token in tokenizer.tokenize(sup):
                 v.add_token(token)
@@ -123,11 +126,11 @@ def test_vocab():
                     token2idx[token] = idx
                     idx2token[idx] = token
                     idx += 1
-                    log.statistical('uncommon word if high number: {0}, {1}', token, idx)
-                    log.statistical('uncommon word if high number: {0}, {1}', token, v.get_idx(token))
+                    log.statistical('uncommon word if high number: {0}, {1}', 0.001, token, idx)
+                    log.statistical('uncommon word if high number: {0}, {1}', 0.001, token, v.get_idx(token))
 
             v.add_label(t)
-            log.statistical('label vocab index, that is small numbers: {0}', v.idx2label.keys())
+            log.statistical('label vocab index, that is small numbers: {0}', 0.01, v.idx2label.keys())
 
 
     # 3. Compare vocabs
@@ -141,7 +144,7 @@ def test_vocab():
         assert v.idx2token[idx] == idx2token[idx], 'Token for index not the same!'
 
     for label in v.label2idx:
-        log.statistical('a label: {0}', label)
+        log.statistical('a label: {0}', 0.001, label)
         assert v.label2idx[label] == v2.label2idx[label], 'Index for label not the same!'
 
     for idx in v.idx2label:
@@ -165,7 +168,7 @@ def test_to_lower_sent():
     # 2. test lowercase
     assert len(sents) == 200 # we have 100 samples for snli
     for sent in sents:
-        log.statistical('lower case sentence {0}', sent)
+        log.statistical('lower case sentence {0}', 0.001, sent)
         assert sent == sent.lower(), 'Sentence is not lower case'
 
 def test_to_lower_token():
@@ -186,7 +189,7 @@ def test_to_lower_token():
 
     # 2. test lowercase
     for token in tokens:
-        log.statistical('lower case token: {0}', token)
+        log.statistical('lower case token: {0}', 0.0001, token)
         assert token == token.lower(), 'Token is not lower case'
 
 def test_save_to_list_text():
@@ -203,7 +206,7 @@ def test_save_to_list_text():
     with open(path) as f:
         for inp1, sup1, line in zip(inp_texts, sup_texts, f):
             inp2, sup2, t = json.loads(line)
-            log.statistical('a wikipedia paragraph: {0}', sup1)
+            log.statistical('a wikipedia paragraph: {0}', 0.5, sup1)
             assert inp1 == inp2, 'Saved text data not the same!'
             assert sup1 == sup2, 'Saved text data not the same!'
 
@@ -229,7 +232,7 @@ def test_save_to_list_sentences():
             inp, sup, t = json.loads(line)
             sup_sents2 += sent_tokenizer.tokenize(sup)
             inp_sents2 += sent_tokenizer.tokenize(inp)
-            log.statistical('a list of sentences: {0}', sup_sents)
+            log.statistical('a list of sentences: {0}', 0.3, sup_sents)
 
     # 3. test equivalence
     assert len(inp_sents) == len(inp_sents2), 'Sentence count differs!'
@@ -239,7 +242,7 @@ def test_save_to_list_sentences():
         assert sent1 == sent2, 'Saved sentence data not the same!'
 
     for sent1, sent2 in zip(sup_sents, sup_sents2):
-        log.statistical('a sentence from a wiki paragraph: {0}', sent1)
+        log.statistical('a sentence from a wiki paragraph: {0}', 0.3, sent1)
         assert sent1 == sent2, 'Saved sentence data not the same!'
 
 
@@ -283,13 +286,13 @@ def test_save_to_list_post_process():
                 assert token1 == token2, 'Tokens differ!'
 
     for sample1, sample2 in zip(sup_samples, sup_samples2):
-        log.statistical('a wiki paragraph {0}', sample1)
+        log.statistical('a wiki paragraph {0}', 0.1,  sample1)
         assert len(sample1) == len(sample2), 'Sentence count differs!'
         for sent1, sent2, in zip(sample1, sample2):
-            log.statistical('a sentence of tokens of a wiki paragraph {0}', sent1)
+            log.statistical('a sentence of tokens of a wiki paragraph {0}', 0.01, sent1)
             assert len(sent1) == len(sent2), 'Token count differs!'
             for token1, token2 in zip(sent1, sent2):
-                log.statistical('a token from a sentence of a wiki paragraph {0}', token1)
+                log.statistical('a token from a sentence of a wiki paragraph {0}', 0.001, token1)
                 assert token1 == token2, 'Tokens differ!'
 
 
@@ -308,7 +311,7 @@ def test_convert_token_to_idx_no_sentences():
 
     inp_indices = state['data']['idx']['input']
     label_idx = state['data']['idx']['target']
-    log.statistical('a list of about 10 indices: {0}', inp_indices[0])
+    log.statistical('a list of about 10 indices: {0}', 0.5, inp_indices[0])
 
     # 2. use Vocab manually
     v = Vocab('test')
@@ -339,7 +342,7 @@ def test_convert_token_to_idx_no_sentences():
             for token in tokenizer.tokenize(sup):
                 sup_idx.append(v.get_idx(token))
 
-            log.statistical('a list of about 10 indices {0}', inp_idx)
+            log.statistical('a list of about 10 indices {0}', 0.01, inp_idx)
             tokenized_sents['target'].append(v.get_idx_label(t))
             tokenized_sents['input'].append(inp_idx)
             tokenized_sents['support'].append(sup_idx)
@@ -371,7 +374,7 @@ def test_save_lengths():
 
     lengths_inp = state['data']['lengths']['input']
     lengths_sup = state['data']['lengths']['support']
-    log.statistical('a list of length values {0}', lengths_inp)
+    log.statistical('a list of length values {0}', 0.5, lengths_inp)
     lengths1 = lengths_inp + lengths_sup
 
     # 2. generate lengths manually
@@ -428,6 +431,8 @@ def test_stream_to_hdf5():
     max_sup_len = np.max(state['data']['lengths']['support'])
     # For SNLI the targets consist of single words'
     assert np.max(state['data']['lengths']['target']) == 1, 'Max index label length should be 1'
+    assert 'counts' in streamer.config, 'counts key not found in config dict!'
+    assert len(streamer.config['counts']) > 0,'Counts of samples per file must be larger than zero (probably no files have been saved)'
 
     # 3. parse data to numpy
     n = len(inp_indices)
@@ -486,6 +491,7 @@ def test_stream_to_hdf5():
             assert path1 == path2, 'Paths differ from HDF5 config!'
     np.testing.assert_array_equal(config_dict['fractions'], streamer.config['fractions'], 'Fractions for HDF5 samples per file not equal!')
     np.testing.assert_array_equal(config_dict['counts'], streamer.config['counts'], 'Counts for HDF5 samples per file not equal!')
+    assert len(streamer.config['counts']) > 0, 'List of counts empty!'
 
     path_types = ['input', 'support', 'input_length', 'support_length', 'target', 'index']
     for i, paths in enumerate(streamer.config['paths']):
@@ -540,6 +546,7 @@ def test_bin_search():
                 assert path1 == path2, 'Paths differ from bin config!'
     np.testing.assert_array_equal(config_dict['fractions'], bin_creator.config['fractions'], 'Fractions for HDF5 samples per file not equal!')
     np.testing.assert_array_equal(config_dict['counts'], bin_creator.config['counts'], 'Counts for HDF5 samples per file not equal!')
+    assert len(bin_creator.config['counts']) > 0, 'List of counts empty!'
 
     path_types = ['input', 'support', 'input_length', 'support_length', 'target', 'index']
     for i, paths in enumerate(bin_creator.config['paths']):
@@ -574,7 +581,9 @@ def test_bin_search():
     shutil.rmtree(base_path)
 
 
-def test_non_random_stream_batcher():
+test_data = [(500), (100000)]
+@pytest.mark.parametrize("samples_per_file", test_data, ids= lambda x: 'samples_per_file={0}'.format(x))
+def test_non_random_stream_batcher(samples_per_file):
     tokenizer = nltk.tokenize.WordPunctTokenizer()
     data_folder_name = 'snli_test'
     pipeline_folder = 'test_pipeline'
@@ -597,7 +606,7 @@ def test_non_random_stream_batcher():
     p.add_post_processor(ConvertTokenToIdx())
     p.add_post_processor(SaveStateToList('idx'))
     # 2 samples per file -> 50 files
-    streamer = StreamToHDF5(data_folder_name, samples_per_file=500)
+    streamer = StreamToHDF5(data_folder_name, samples_per_file=samples_per_file)
     p.add_post_processor(streamer)
     state = p.execute()
 
@@ -609,6 +618,14 @@ def test_non_random_stream_batcher():
     max_sup_len = np.max(state['data']['lengths']['support'])
     # For SNLI the targets consist of single words'
     assert np.max(state['data']['lengths']['target']) == 1, 'Max index label length should be 1'
+    assert 'counts' in streamer.config, 'counts key not found in config dict!'
+    assert len(streamer.config['counts']) > 0,'Counts of samples per file must be larger than zero (probably no files have been saved)'
+    if samples_per_file == 100000:
+        count = len(streamer.config['counts'])
+        assert count == 1,'Samples per files is 100000 and there should be one file for 3k samples, but there are {0}'.format(count)
+
+    assert streamer.num_samples == 3000, 'There should be 3000 samples for this dataset, but found {1}!'.format(streamer.num_samples)
+
 
     # 3. parse data to numpy
     n = len(inp_indices)

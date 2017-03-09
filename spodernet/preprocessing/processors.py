@@ -120,10 +120,10 @@ class ConvertTokenToIdx(AbstractLoopLevelTokenProcessor):
 
     def process_token(self, token, inp_type):
         if inp_type != 'target':
-            log.statistical('a label {0}', token)
+            log.statistical('a non-label token {0}', 0.00001, token)
             return self.state['vocab'].get_idx(token)
         else:
-            log.statistical('a non-label token {0}', token)
+            log.statistical('a token {0}', 0.00001, token)
             return self.state['vocab'].get_idx_label(token)
 
 class SaveStateToList(AbstractProcessor):
@@ -148,14 +148,14 @@ class SaveLengthsToState(AbstractLoopLevelListOfTokensProcessor):
 
     def link_with_pipeline(self, state):
         self.state = state
-        if 'lengths' not in self.state['data']:
-            self.state['data']['lengths'] = {}
+        self.state['data']['lengths'] = {}
         self.data = self.state['data']['lengths']
 
     def process_list_of_tokens(self, tokens, inp_type):
         if inp_type not in self.data: self.data[inp_type] = []
         self.data[inp_type].append(len(tokens))
-        log.statistical('A list of tokens: {0}', tokens)
+        log.statistical('A list of tokens: {0}', 0.0001, tokens)
+        log.debug_once('Pipeline {1}: A list of tokens: {0}', tokens, self.state['name'])
         return tokens
 
 class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
@@ -166,6 +166,7 @@ class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
         self.name = name
         self.idx = 0
         self.shard_id = {'target' : 0, 'input' : 0, 'support' : 0}
+        self.max_lengths = {'target' : 0, 'input' : 0, 'support' : 0}
         self.data = {'target' : [], 'input' : [], 'support' : [], 'index' : []}
         self.num_samples = None
         self.config = {'paths' : [], 'sample_count' : []}
@@ -183,31 +184,40 @@ class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
                        'processor, execute, clean processors, then rerun the pipeline with hdf5 streaming.'))
         if self.num_samples == None:
             self.num_samples = len(self.state['data']['lengths']['input'])
-        log.debug_once('Using type int32 for inputs and supports for now, but this may not be correct in the future')
+        log.debug('Using type int32 for inputs and supports for now, but this may not be correct in the future')
         self.checked_for_lengths = True
         self.num_samples = len(self.state['data']['lengths']['input'])
+        log.debug('Number of samples as calcualted with the length data (SaveLengthsToState): {0}', self.num_samples)
 
     def process_list_of_tokens(self, tokens, inp_type):
         if not self.checked_for_lengths:
             self.init_and_checks()
 
-        max_length = np.max(self.state['data']['lengths'][inp_type])
-        log.statistical('max length of the dataset: {0}', max_length)
-        x = np.zeros((max_length), dtype=np.int32)
+        if self.max_lengths[inp_type] == 0:
+            max_length = np.max(self.state['data']['lengths'][inp_type])
+            log.debug('Calculated max length for input type {0} to be {1}', inp_type, max_length)
+            self.max_lengths[inp_type] = max_length
+            log.statistical('max length of the dataset: {0}', 0.0001, max_length)
+        x = np.zeros((self.max_lengths[inp_type]), dtype=np.int32)
         x[:len(tokens)] = tokens
-        if len(tokens) == 1:
+        if len(tokens) == 1 and inp_type == 'target':
             self.data[inp_type].append(x[0])
         else:
-            self.data[inp_type].append(x)
+            self.data[inp_type].append(x.tolist())
         if inp_type == 'target':
             self.data['index'].append(self.idx)
             self.idx += 1
 
-        if len(self.data[inp_type]) == self.samples_per_file:
+        if (  len(self.data[inp_type]) == self.samples_per_file
+           or len(self.data[inp_type]) == self.num_samples):
             self.save_to_hdf5(inp_type)
+
+        if self.idx % 10000 == 0:
+            log.debug('Sample index: {0}', self.idx)
 
         if self.idx == self.num_samples:
             counts = np.array(self.config['sample_count'])
+            log.debug('Counts for each shard: {0}'.format(counts))
             fractions = counts / np.float32(np.sum(counts))
             self.config['fractions'] = fractions.tolist()
             self.config['counts'] = counts.tolist()
@@ -223,11 +233,25 @@ class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
         idx = self.shard_id[inp_type]
         X = np.array(self.data[inp_type])
         file_name = inp_type + '_' + str(idx+1) + '.hdf5'
+        if isinstance(X[0], list):
+            new_X = []
+            l = len(X[0])
+            for i, list_item in enumerate(X):
+                print(type(list_item))
+                print(list_item)
+                print(i)
+                assert l == len(list_item)
+            X = np.array(new_X, dtype=np.int32)
+            log.debug("{0}", X)
+        log.debug('Writing hdf5 file for input type {0} to disk. Using index {1} and path {2}', inp_type, idx, join(self.base_path, file_name))
+        log.debug('Writing hdf5 data. One sample row: {0}, shape: {1}, type: {2}', X[0], X.shape, X.dtype)
         numpy2hdf(join(self.base_path, file_name), X)
         if idx not in self.paths: self.paths[idx] = []
         self.paths[idx].append(join(self.base_path, file_name))
 
+
         if inp_type == 'input':
+            log.statistical('Count of shard {0}; should be {1} most of the time'.format(X.shape[0], self.samples_per_file), 0.1)
             self.config['sample_count'].append(X.shape[0])
 
         if inp_type != 'target':
@@ -289,6 +313,10 @@ class CreateBinsByNestedLength(AbstractLoopLevelListOfTokensProcessor):
 
         idx = self.inp_type2idx[inp_type]
         self.idx2data[inp_type][idx] = tokens
+
+        if inp_type == 'input' and idx % 10000 == 0:
+            log.debug('Sample index: {0}', idx)
+
         if idx in self.idx2data['input'] and idx in self.idx2data['support'] and idx in self.idx2data['target']:
             x1 = self.idx2data['input'][idx]
             x2 = self.idx2data['support'][idx]
@@ -307,7 +335,7 @@ class CreateBinsByNestedLength(AbstractLoopLevelListOfTokensProcessor):
             self.binidx2numprocessed[bin_idx] += 1
             self.inp_type2idx[inp_type] += 1
 
-            if (len(self.binidx2data['input']) % 100 == 0
+            if (len(self.binidx2data['input']) % 1000 == 0
                or (self.binidx2numprocessed[bin_idx] == self.binidx2bincount[bin_idx]
                          and len(self.binidx2data['input'][bin_idx]) > 0)):
                 X_new = np.array(self.binidx2data['input'][bin_idx])
@@ -325,8 +353,8 @@ class CreateBinsByNestedLength(AbstractLoopLevelListOfTokensProcessor):
                 if os.path.exists(pathX):
                     X_old = hdf2numpy(pathX)
                     S_old = hdf2numpy(pathS)
-                    idx_old = hdf5numpy(pathIdx)
-                    t_old = hdf5numpy(pathT)
+                    idx_old = hdf2numpy(pathIdx)
+                    t_old = hdf2numpy(pathT)
                     X = np.vstack([X_old, X_new])
                     S = np.vstack([S_old, S_new])
                     index = np.vstack([idx_old, idx_new])
@@ -426,7 +454,7 @@ class CreateBinsByNestedLength(AbstractLoopLevelListOfTokensProcessor):
         wasted_fraction = wasted_samples / l1.size
         log.info('Wasted fraction for batch size {0} is {1}', self.min_batch_size, wasted_fraction)
         if wasted_fraction > self.raise_fraction:
-            str_message = 'Wasted fraction {1} higher than the raise error threshold of {0}!'.format(self.raise_fraction, wasted_fraction)
+            str_message = 'Wasted fraction {1}! This is higher than the raise error threshold of {0}!'.format(self.raise_fraction, wasted_fraction)
             log.error(str_message)
             raise Exception(str_message)
 

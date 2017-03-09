@@ -9,7 +9,7 @@ import os
 
 import numpy as np
 import nltk
-import json
+import simplejson as json
 
 SINGLE_INPUT_SINGLE_SUPPORT_CLASSIFICATION = 0
 data_dir = os.path.join(os.environ['HOME'], '.data')
