@@ -96,6 +96,14 @@ class Tokenizer(AbstractProcessor):
     def process(self, sentence, inp_type):
         return self.tokenize(sentence)
 
+class NaiveNCharTokenizer(AbstractProcessor):
+    def __init__(self, N=3):
+        super(NaiveNCharTokenizer, self).__init__()
+        self.N = N
+
+    def process(self, sentence, inp_type):
+        return [sentence[i:i+self.N] for i in range(0, len(sentence), self.N)]
+
 class AddToVocab(AbstractProcessor):
     def __init__(self):
         super(AddToVocab, self).__init__()
