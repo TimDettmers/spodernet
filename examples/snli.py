@@ -7,10 +7,11 @@ from spodernet.util import hdf2numpy, load_hdf5_paths
 from spodernet.hooks import AccuracyHook, LossHook, ETAHook
 from spodernet.models import DualLSTM
 from spodernet.preprocessing.pipeline import Pipeline
-from spodernet.preprocessing.processors import AddToVocab, CreateBinsByNestedLength, SaveLengthsToState, ConvertTokenToIdx, StreamToHDF5, Tokenizer
+from spodernet.preprocessing.processors import AddToVocab, CreateBinsByNestedLength, SaveLengthsToState, ConvertTokenToIdx, StreamToHDF5, Tokenizer, NaiveNCharTokenizer
 from spodernet.preprocessing.batching import StreamBatcher
 from spodernet.logger import Logger, LogLevel
 from spodernet.util import Timer
+from spodernet.global_config import Config, Backends
 
 import nltk
 import torch
@@ -26,7 +27,7 @@ import time
 class SNLIClassification(torch.nn.Module):
     def __init__(self, batch_size, vocab, use_cuda=False):
         super(SNLIClassification, self).__init__()
-        self.batch_size = batch_size 
+        self.batch_size = batch_size
         input_dim = 256
         hidden_dim = 128
         num_directions = 1
@@ -97,11 +98,14 @@ def preprocess_SNLI():
     train_path, dev_path, test_path = file_paths
     tokenizer = nltk.tokenize.WordPunctTokenizer()
 
+    t = ['target']
+    not_t = ['input', 'support']
     # tokenize and convert to hdf5
     # 1. Setup pipeline to save lengths and generate vocabulary
-    p = Pipeline('snli_example')
+    p = Pipeline('snli_example_char')
     p.add_path(train_path)
-    p.add_sent_processor(Tokenizer(tokenizer.tokenize))
+    p.add_sent_processor(Tokenizer(tokenizer.tokenize), t)
+    p.add_sent_processor(NaiveNCharTokenizer(3), not_t)
     p.add_token_processor(AddToVocab())
     p.add_post_processor(SaveLengthsToState())
     p.execute()
@@ -109,34 +113,39 @@ def preprocess_SNLI():
     p.state['vocab'].save_to_disk()
 
     # 2. Process the data further to stream it to hdf5
-    p.add_sent_processor(Tokenizer(tokenizer.tokenize))
+    p.add_sent_processor(Tokenizer(tokenizer.tokenize), t)
+    p.add_sent_processor(NaiveNCharTokenizer(3), not_t)
     p.add_post_processor(ConvertTokenToIdx())
     p.add_post_processor(CreateBinsByNestedLength('snli_train', min_batch_size=128))
     state = p.execute()
 
     # dev and test data
-    p2 = Pipeline('snli_example')
+    p2 = Pipeline('snli_example_char')
     p2.add_vocab(p)
     p2.add_path(dev_path)
-    p2.add_sent_processor(Tokenizer(tokenizer.tokenize))
+    p2.add_sent_processor(Tokenizer(tokenizer.tokenize), t)
+    p2.add_sent_processor(NaiveNCharTokenizer(3), not_t)
     p2.add_post_processor(SaveLengthsToState())
     p2.execute()
 
     p2.clear_processors()
-    p2.add_sent_processor(Tokenizer(tokenizer.tokenize))
+    p2.add_sent_processor(Tokenizer(tokenizer.tokenize), t)
+    p2.add_sent_processor(NaiveNCharTokenizer(3), not_t)
     p2.add_post_processor(ConvertTokenToIdx())
     p2.add_post_processor(StreamToHDF5('snli_dev'))
     p2.execute()
 
-    p3 = Pipeline('snli_example')
+    p3 = Pipeline('snli_example_char')
     p3.add_vocab(p)
     p3.add_path(test_path)
-    p3.add_sent_processor(Tokenizer(tokenizer.tokenize))
+    p3.add_sent_processor(Tokenizer(tokenizer.tokenize), t)
+    p3.add_sent_processor(NaiveNCharTokenizer(3), not_t)
     p3.add_post_processor(SaveLengthsToState())
     p3.execute()
 
     p3.clear_processors()
-    p3.add_sent_processor(Tokenizer(tokenizer.tokenize))
+    p3.add_sent_processor(Tokenizer(tokenizer.tokenize), t)
+    p3.add_sent_processor(NaiveNCharTokenizer(3), not_t)
     p3.add_post_processor(ConvertTokenToIdx())
     p3.add_post_processor(StreamToHDF5('snli_test'))
     p3.execute()
@@ -144,28 +153,31 @@ def preprocess_SNLI():
 def main():
 
     Logger.GLOBAL_LOG_LEVEL = LogLevel.DEBUG
+    Config.backend = Backends.TORCH
+    Config.cuda = True
 
     do_preprocess = False
     if do_preprocess:
         preprocess_SNLI()
 
 
-    p = Pipeline('snli_example')
+    p = Pipeline('snli_example_char')
     vocab = p.state['vocab']
     vocab.load_from_disk()
 
     batch_size = 128
-    train_batcher = StreamBatcher('snli_example', 'snli_train', batch_size, randomize=True, loader_threads=4)
-    dev_batcher = StreamBatcher('snli_example', 'snli_dev', batch_size)
-    test_batcher  = StreamBatcher('snli_example', 'snli_test', batch_size)
+    train_batcher = StreamBatcher('snli_example_char', 'snli_train', batch_size, randomize=True, loader_threads=4)
+    dev_batcher = StreamBatcher('snli_example_char', 'snli_dev', batch_size)
+    test_batcher  = StreamBatcher('snli_example_char', 'snli_test', batch_size)
 
     print('load model')
-    model = SNLIClassification(batch_size, vocab, use_cuda=False)
-    #snli.cuda()
+    model = SNLIClassification(batch_size, vocab, use_cuda=Config.cuda)
+    if Config.cuda:
+        model.cuda()
 
     epochs = 5
-    train_batcher.subscribe_to_events(AccuracyHook('Train', print_every_x_batches=4))
-    train_batcher.subscribe_to_events(ETAHook('Train', print_every_x_batches=4))
+    train_batcher.subscribe_to_events(AccuracyHook('Train', print_every_x_batches=1000))
+    dev_batcher.subscribe_to_events(AccuracyHook('Dev', print_every_x_batches=1000))
     #hook = AccuracyHook('Train')
     #train_batcher.add_hook(hook)
     #train_batcher.add_hook(LossHook('Train'))
@@ -198,13 +210,10 @@ def main():
 
         model.eval()
         for inp, inp_len, sup, sup_len, t, idx in dev_batcher:
-            inp = Variable(torch.LongTensor(inp.tolist()))
-            inp_len = Variable(torch.IntTensor(inp_len.tolist()))
-            sup = Variable(torch.LongTensor(sup.tolist()))
-            sup_len = Variable(torch.IntTensor(sup_len.tolist()))
-            t = Variable(torch.LongTensor(t.tolist()))
             pred = model.forward_to_output(inp, sup, inp_len, sup_len, t)
             maxiumum, argmax = torch.topk(pred.data, 1)
+            dev_batcher.state.argmax = argmax
+            dev_batcher.state.targets = t
             #dev_batcher.add_to_hook_histories(t, argmax, loss)
     print(time.time()-t0)
 

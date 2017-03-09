@@ -14,6 +14,7 @@ class Config:
     batch_size = 128
     learning_rate = 0.001
     backend = Backends.TORCH
+    cuda = False
 
     @staticmethod
     def parse_argv(*argv):
