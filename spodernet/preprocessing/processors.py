@@ -313,7 +313,7 @@ class CreateBinsByNestedLength(AbstractLoopLevelListOfTokensProcessor):
                 X_new = np.array(self.binidx2data['input'][bin_idx])
                 S_new = np.array(self.binidx2data['support'][bin_idx])
                 idx_new = np.array(self.binidx2data['index'][bin_idx])
-                t_new = np.array(self.binidx2data['target'][bin_idx])
+                t_new = np.array(self.binidx2data['target'][bin_idx]).reshape(-1,)
 
                 pathX = join(self.base_path, 'input_bin_{0}.hdf5'.format(bin_idx))
                 pathS = join(self.base_path, 'support_bin_{0}.hdf5'.format(bin_idx))
@@ -339,8 +339,8 @@ class CreateBinsByNestedLength(AbstractLoopLevelListOfTokensProcessor):
 
                 numpy2hdf(pathX, X)
                 numpy2hdf(pathS, S)
-                numpy2hdf(pathX_len, np.ones((X.shape[0]))*X.shape[1])
-                numpy2hdf(pathS_len, np.ones((S.shape[0]))*S.shape[1])
+                numpy2hdf(pathX_len, np.ones((X.shape[0]), dtype=np.int32)*X.shape[1])
+                numpy2hdf(pathS_len, np.ones((S.shape[0]), dtype=np.int32)*S.shape[1])
                 numpy2hdf(pathIdx, index)
                 numpy2hdf(pathT, T)
                 del self.binidx2data['input'][bin_idx][:]
@@ -389,7 +389,7 @@ class CreateBinsByNestedLength(AbstractLoopLevelListOfTokensProcessor):
         config['fractions'] = (np.float64(np.array(counts)) / np.sum(counts))
         config['counts'] = counts
         self.config = config
-        pickle.dump(config, open(join(self.base_path, 'bin_config.pkl'), 'w'), pickle.HIGHEST_PROTOCOL)
+        pickle.dump(config, open(join(self.base_path, 'hdf5_config.pkl'), 'w'), pickle.HIGHEST_PROTOCOL)
 
         self.performed_search = True
         self.max_sample_idx = l1.size-1
@@ -426,7 +426,9 @@ class CreateBinsByNestedLength(AbstractLoopLevelListOfTokensProcessor):
         wasted_fraction = wasted_samples / l1.size
         log.info('Wasted fraction for batch size {0} is {1}', self.min_batch_size, wasted_fraction)
         if wasted_fraction > self.raise_fraction:
-            raise Exception('Wasted fraction higher than the raise error threshold of {0}!'.format(self.raise_fraction))
+            str_message = 'Wasted fraction {1} higher than the raise error threshold of {0}!'.format(self.raise_fraction, wasted_fraction)
+            log.error(str_message)
+            raise Exception(str_message)
 
         # assign this here for testing purposes
         self.wasted_fraction = wasted_fraction

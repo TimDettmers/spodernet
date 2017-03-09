@@ -286,7 +286,7 @@ class DataLoaderSlave(Thread):
                 self.load_files_if_needed(current_paths)
 
                 n = self.current_data[current_paths[0]].shape[0]
-                start = self.rdm.randint(0, n-self.stream_batcher.batch_size)
+                start = self.rdm.randint(0, n-self.stream_batcher.batch_size+1)
                 end = start + self.stream_batcher.batch_size
 
                 batch_parts = self.create_batch_parts(current_paths, start, end)
@@ -380,7 +380,6 @@ class StreamBatcher(object):
     def next(self):
         if self.batch_idx + 1 < self.num_batches:
             batch_parts = self.get_next_batch_parts()
-            print(self.num_batches)
 
             self.batch_idx += 1
             self.work.put(self.prefetch_batch_idx)
