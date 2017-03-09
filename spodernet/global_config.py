@@ -3,10 +3,17 @@ from collections import namedtuple
 from spodernet.logger import Logger
 log = Logger('global_config.py.txt')
 
+class Backends:
+    TORCH = 'pytorch'
+    TENSORFLOW = 'tensorflow'
+    NUMPY = 'numpy'
+
+
 class Config:
     dropout = 0.0
     batch_size = 128
     learning_rate = 0.001
+    backend = Backends.TORCH
 
     @staticmethod
     def parse_argv(*argv):

@@ -32,6 +32,7 @@ class LogLevel(IntEnum):
 class Logger:
     GLOBAL_LOG_LEVEL = LogLevel.INFO
     LOG_PROPABILITY = 0.05
+    USE_GLOBAL_STATISTICAL_LOG_PROBABILITY = False
 
     def __init__(self, file_name, write_type='w'):
         path = join(get_logger_path(), file_name)
@@ -51,13 +52,21 @@ class Logger:
     def wrap_message(self, message, log_level, *args):
         return '{0} ({2}): {1}'.format(datetime.datetime.now(), message.format(*args), log_level.name)
 
-    def statistical(self, message, *args):
-        self._log(message, LogLevel.STATISTICAL, *args)
+    def statistical(self, message, p, *args):
+        if Logger.GLOBAL_LOG_LEVEL == LogLevel.STATISTICAL:
+            self._log_statistical(message, p, *args)
 
     def debug(self, message, *args):
         self._log(message, LogLevel.DEBUG, *args)
 
+    def info_once(self, message, *args):
+        if LogLevel.INFO < Logger.GLOBAL_LOG_LEVEL: return
+        if message not in self.once_set:
+            self.once_set.add(message)
+            self._log(message, LogLevel.INFO, *args)
+
     def debug_once(self, message, *args):
+        if LogLevel.DEBUG < Logger.GLOBAL_LOG_LEVEL: return
         if message not in self.once_set:
             self.once_set.add(message)
             self._log(message, LogLevel.DEBUG, *args)
@@ -71,19 +80,21 @@ class Logger:
     def error(self, message, *args):
         self._log(message, LogLevel.ERROR, *args)
 
-    def _log_statistical(self, message, *args):
+    def _log_statistical(self, message, p, *args):
         rdm_num = self.rdm.rand()
-        if rdm_num < Logger.LOG_PROPABILITY:
-            message = self.wrap_message(message, LogLevel.STATISTICAL, *args)
-            self.f_statistical.write(message + '\n')
+        if Logger.USE_GLOBAL_STATISTICAL_LOG_PROBABILITY:
+            if rdm_num < Logger.LOG_PROPABILITY:
+                message = self.wrap_message(message, LogLevel.STATISTICAL, *args)
+                self.f_statistical.write(message + '\n')
+        else:
+            if rdm_num < p:
+                message = self.wrap_message(message, LogLevel.STATISTICAL, *args)
+                self.f_statistical.write(message + '\n')
 
     def _log(self, message, log_level=LogLevel.INFO, *args):
         if log_level >= Logger.GLOBAL_LOG_LEVEL:
-            if log_level == LogLevel.STATISTICAL:
-                self._log_statistical(message, *args)
-            else:
-                message = self.wrap_message(message, log_level, *args)
-                print(message)
-                self.f.write(message + '\n')
+            message = self.wrap_message(message, log_level, *args)
+            print(message)
+            self.f.write(message + '\n')
 
 

@@ -4,10 +4,15 @@ from __future__ import print_function
 from spodernet.data.snli2spoder import snli2spoder
 from spodernet.preprocessing import spoder2hdf5
 from spodernet.util import hdf2numpy, load_hdf5_paths
-from spodernet.preprocessing.batching import Batcher
-from spodernet.hooks import AccuracyHook, LossHook
+from spodernet.hooks import AccuracyHook, LossHook, ETAHook
 from spodernet.models import DualLSTM
+from spodernet.preprocessing.pipeline import Pipeline
+from spodernet.preprocessing.processors import AddToVocab, CreateBinsByNestedLength, SaveLengthsToState, ConvertTokenToIdx, StreamToHDF5, Tokenizer
+from spodernet.preprocessing.batching import StreamBatcher
+from spodernet.logger import Logger, LogLevel
+from spodernet.util import Timer
 
+import nltk
 import torch
 import numpy as np
 from torch.autograd import Variable
@@ -17,20 +22,21 @@ from scipy.stats.mstats import normaltest
 np.set_printoptions(suppress=True)
 import time
 
+
 class SNLIClassification(torch.nn.Module):
     def __init__(self, batch_size, vocab, use_cuda=False):
         super(SNLIClassification, self).__init__()
         self.batch_size = batch_size 
         input_dim = 256
-        hidden_dim = 512
-        num_directions = 2
-        layers = 2
+        hidden_dim = 128
+        num_directions = 1
+        layers = 1
         self.emb= torch.nn.Embedding(vocab.num_embeddings,
                 input_dim, padding_idx=0)#, scale_grad_by_freq=True, padding_idx=0)
         self.projection_to_labels = torch.nn.Linear(2 * num_directions * hidden_dim, 3)
         self.dual_lstm = DualLSTM(self.batch_size,input_dim,
                 hidden_dim,layers=layers,
-                bidirectional=True,to_cuda=use_cuda )
+                bidirectional=False,to_cuda=use_cuda )
         #self.init_weights()
 
         #print(i.size(1), input_dim)
@@ -85,18 +91,96 @@ class SNLIClassification(torch.nn.Module):
         #print(pred[0:5])
         return pred
 
-def train_model(model, train_batcher, dev_batcher):
+def preprocess_SNLI():
+    # load data
+    names, file_paths = snli2spoder()
+    train_path, dev_path, test_path = file_paths
+    tokenizer = nltk.tokenize.WordPunctTokenizer()
+
+    # tokenize and convert to hdf5
+    # 1. Setup pipeline to save lengths and generate vocabulary
+    p = Pipeline('snli_example')
+    p.add_path(train_path)
+    p.add_sent_processor(Tokenizer(tokenizer.tokenize))
+    p.add_token_processor(AddToVocab())
+    p.add_post_processor(SaveLengthsToState())
+    p.execute()
+    p.clear_processors()
+    p.state['vocab'].save_to_disk()
+
+    # 2. Process the data further to stream it to hdf5
+    p.add_sent_processor(Tokenizer(tokenizer.tokenize))
+    p.add_post_processor(ConvertTokenToIdx())
+    p.add_post_processor(CreateBinsByNestedLength('snli_train', min_batch_size=128))
+    state = p.execute()
+
+    # dev and test data
+    p2 = Pipeline('snli_example')
+    p2.add_vocab(p)
+    p2.add_path(dev_path)
+    p2.add_sent_processor(Tokenizer(tokenizer.tokenize))
+    p2.add_post_processor(SaveLengthsToState())
+    p2.execute()
+
+    p2.clear_processors()
+    p2.add_sent_processor(Tokenizer(tokenizer.tokenize))
+    p2.add_post_processor(ConvertTokenToIdx())
+    p2.add_post_processor(StreamToHDF5('snli_dev'))
+    p2.execute()
+
+    p3 = Pipeline('snli_example')
+    p3.add_vocab(p)
+    p3.add_path(test_path)
+    p3.add_sent_processor(Tokenizer(tokenizer.tokenize))
+    p3.add_post_processor(SaveLengthsToState())
+    p3.execute()
+
+    p3.clear_processors()
+    p3.add_sent_processor(Tokenizer(tokenizer.tokenize))
+    p3.add_post_processor(ConvertTokenToIdx())
+    p3.add_post_processor(StreamToHDF5('snli_test'))
+    p3.execute()
+
+def main():
+
+    Logger.GLOBAL_LOG_LEVEL = LogLevel.DEBUG
+
+    do_preprocess = False
+    if do_preprocess:
+        preprocess_SNLI()
+
+
+    p = Pipeline('snli_example')
+    vocab = p.state['vocab']
+    vocab.load_from_disk()
+
+    batch_size = 128
+    train_batcher = StreamBatcher('snli_example', 'snli_train', batch_size, randomize=True, loader_threads=4)
+    dev_batcher = StreamBatcher('snli_example', 'snli_dev', batch_size)
+    test_batcher  = StreamBatcher('snli_example', 'snli_test', batch_size)
+
+    print('load model')
+    model = SNLIClassification(batch_size, vocab, use_cuda=False)
+    #snli.cuda()
+
     epochs = 5
-    hook = AccuracyHook('Train')
-    train_batcher.add_hook(hook)
-    train_batcher.add_hook(LossHook('Train'))
-    dev_batcher.add_hook(AccuracyHook('Dev'))
+    train_batcher.subscribe_to_events(AccuracyHook('Train', print_every_x_batches=4))
+    train_batcher.subscribe_to_events(ETAHook('Train', print_every_x_batches=4))
+    #hook = AccuracyHook('Train')
+    #train_batcher.add_hook(hook)
+    #train_batcher.add_hook(LossHook('Train'))
+    #dev_batcher.add_hook(AccuracyHook('Dev'))
 
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     t0 = time.time()
+    print('starting training...')
+    t0= Timer()
     for epoch in range(epochs):
         model.train()
-        for inp, sup, inp_len, sup_len, t in train_batcher:
+        t0.tick()
+        for i, (inp, inp_len, sup, sup_len, t, idx) in enumerate(train_batcher):
+            t0.tick()
+
             optimizer.zero_grad()
             pred = model.forward_to_output(inp, sup, inp_len, sup_len, t)
             #print(pred)
@@ -105,52 +189,24 @@ def train_model(model, train_batcher, dev_batcher):
             loss.backward()
             optimizer.step()
             maxiumum, argmax = torch.topk(pred.data, 1)
-            train_batcher.add_to_hook_histories(t, argmax, loss)
+            #train_batcher.add_to_hook_histories(t, argmax, loss)
+            train_batcher.state.argmax = argmax
+            train_batcher.state.targets = t
+            t0.tick()
+        t0.tick()
+        t0.tock()
 
         model.eval()
-        for inp, sup, inp_len, sup_len, t in dev_batcher:
+        for inp, inp_len, sup, sup_len, t, idx in dev_batcher:
+            inp = Variable(torch.LongTensor(inp.tolist()))
+            inp_len = Variable(torch.IntTensor(inp_len.tolist()))
+            sup = Variable(torch.LongTensor(sup.tolist()))
+            sup_len = Variable(torch.IntTensor(sup_len.tolist()))
+            t = Variable(torch.LongTensor(t.tolist()))
             pred = model.forward_to_output(inp, sup, inp_len, sup_len, t)
             maxiumum, argmax = torch.topk(pred.data, 1)
-            dev_batcher.add_to_hook_histories(t, argmax, loss)
-    print(time.time() - t0)
-
-
-def print_data(datasets, vocab, num=100):
-    inp, sup, t = datasets
-    for row in range(num):
-        hypo = ''
-        premise = ''
-        for idx in inp[row]:
-            if idx == 0: continue
-            premise += vocab.get_word(idx) + ' '
-        for idx in sup[row]:
-            if idx == 0: continue
-            hypo += vocab.get_word(idx) + ' '
-        print([premise, hypo, vocab.idx2label[t[row]]])
-
-
-def main():
-    # load data
-    names, file_paths = snli2spoder()
-
-    # tokenize and convert to hdf5
-    lower_list = [True for name in names]
-    add_to_vocab_list = [name != 'test' for name in names]
-    filetype = spoder2hdf5.SINGLE_INPUT_SINGLE_SUPPORT_CLASSIFICATION
-    hdf5paths, vocab = spoder2hdf5.file2hdf(
-        file_paths, names, lower_list, add_to_vocab_list, filetype)
-
-    train_set = load_hdf5_paths(hdf5paths[0])
-    dev_set = load_hdf5_paths(hdf5paths[1])
-
-    batch_size = 128
-    train_batcher = Batcher(train_set, batch_size=batch_size, len_indices=(2,3), data_indices=(0,1), num_print_thresholds=5, transfer_to_gpu=True)
-    dev_batcher = Batcher(dev_set, batch_size=batch_size, num_print_thresholds=1, transfer_to_gpu=True)
-
-    snli = SNLIClassification(batch_size, vocab, use_cuda=True)
-    snli.cuda()
-    snli.train()
-    train_model(snli, train_batcher, dev_batcher)
+            #dev_batcher.add_to_hook_histories(t, argmax, loss)
+    print(time.time()-t0)
 
 if __name__ == '__main__':
     main()

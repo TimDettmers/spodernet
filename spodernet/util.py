@@ -44,14 +44,16 @@ def make_dirs_if_not_exists(path):
         os.makedirs(path)
 
 class Timer(object):
-    def __init__(self):
+    def __init__(self, silent=False):
         self.cumulative_secs = {}
         self.current_ticks = {}
-        pass
+        self.silent = silent
 
     def tick(self, name='default'):
         if name not in self.current_ticks:
             self.current_ticks[name] = time.time()
+
+            return 0.0
         else:
             if name not in self.cumulative_secs:
                 self.cumulative_secs[name] = 0
@@ -59,9 +61,16 @@ class Timer(object):
             self.cumulative_secs[name] += t - self.current_ticks[name]
             self.current_ticks.pop(name)
 
+            return self.cumulative_secs[name]
+
     def tock(self, name='default'):
         self.tick(name)
-        log.info('Time taken for {0}: {1:.1f}s'.format(name, self.cumulative_secs[name]))
+        value = self.cumulative_secs[name]
+        if not self.silent:
+            log.info('Time taken for {0}: {1:.1f}s'.format(name, value))
         self.cumulative_secs.pop(name)
         self.current_ticks.pop(name, None)
+
+        return value
+
 
