@@ -12,7 +12,7 @@ import Queue
 
 from spodernet.util import get_data_path, load_hdf_file, Timer
 from spodernet.logger import Logger
-from spodernet.global_config import Config, Backends
+from spodernet.global_config import Config, Backends, TensorFlowConfig
 from spodernet.hooks import ETAHook
 from spodernet.observables import IAtIterEndObservable, IAtEpochEndObservable, IAtEpochStartObservable, IAtBatchPreparedObservable
 
@@ -43,6 +43,21 @@ class TorchCUDAConverter(IAtBatchPreparedObservable):
         t = t.cuda(self.device_id)
         idx = idx
         return [inp, inp_len, sup, sup_len, t, idx]
+
+class TensorFlowConverter(IAtBatchPreparedObservable):
+
+    def at_batch_prepared(self, batch_parts):
+        inp, inp_len, sup, sup_len, t, idx = batch_parts
+        if TensorFlowConfig.inp == None:
+            log.error('You need to initialize the batch size via TensorflowConfig.init_batch_size(batchsize)!')
+        feed_dict = {}
+        feed_dict[TensorFlowConfig.inp] = inp
+        feed_dict[TensorFlowConfig.support] = sup
+        feed_dict[TensorFlowConfig.input_length] = inp_len
+        feed_dict[TensorFlowConfig.support_length] = sup_len
+        feed_dict[TensorFlowConfig.target] = t
+        feed_dict[TensorFlowConfig.index] = idx
+        return feed_dict
 
 class BatcherState(object):
     def __init__(self):
@@ -200,7 +215,7 @@ class StreamBatcher(object):
             if Config.cuda:
                 self.subscribe_to_batch_prepared_event(TorchCUDAConverter(torch.cuda.current_device()))
         elif Config.backend == Backends.TENSORFLOW:
-            pass
+            self.subscribe_to_batch_prepared_event(TensorFlowConverter())
         else:
             raise Exception('Backend has unsupported value {0}'.format(Config.backend))
 
