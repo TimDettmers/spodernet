@@ -7,7 +7,7 @@ import torch.optim as optim
 from torchvision import datasets, transforms
 from torch.autograd import Variable
 
-from spodernet.util import hdf2numpy
+from spodernet.util import load_hdf_file
 from spodernet.preprocessing.batching import Batcher
 import numpy as np
 
@@ -41,9 +41,9 @@ kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
 
 
 datasets = [
-    np.float32(hdf2numpy('/home/tim/data/mnist/X.hdf5',
+    np.float32(load_hdf_file('/home/tim/data/mnist/X.hdf5',
         'Default')).reshape(-1,1,28,28),
-            np.int64(hdf2numpy('/home/tim/data/mnist/y.hdf5',
+            np.int64(load_hdf_file('/home/tim/data/mnist/y.hdf5',
                 'Default').flatten())]
 
 b = Batcher(datasets, 64)

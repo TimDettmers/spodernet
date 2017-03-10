@@ -26,24 +26,24 @@ class Vocab(object):
             self.idx2label[idx] = labels[idx]
 
         # out of vocabulary token
-        token2idx['OOV'] = 0
-        idx2token[0] = 'OOV'
+        token2idx['OOV'] = int(0)
+        idx2token[int(0)] = 'OOV'
         # empty = 0
-        token2idx[''] = 1
-        idx2token[1] = ''
+        token2idx[''] = int(1)
+        idx2token[int(1)] = ''
 
         self.token2idx = token2idx
         self.idx2token = idx2token
         self.path = path
         if len(idx2token.keys()) > 0:
-            self.next_idx = np.max(idx2token.keys()) + 1
+            self.next_idx = int(np.max(idx2token.keys()) + 1)
         else:
-            self.next_idx = 2
+            self.next_idx = int(2)
 
         if len(self.idx2label.keys()) > 0:
-            self.next_label_2dx = np.max(self.idx2label.keys()) + 1
+            self.next_label_2dx = int(np.max(self.idx2label.keys()) + 1)
         else:
-            self.next_label_idx = 0
+            self.next_label_idx = int(0)
 
     @property
     def num_embeddings(self):

@@ -3,7 +3,7 @@ into a hdf5 file.'''
 from collections import Counter
 
 from spodernet.preprocessing.vocab import Vocab
-from spodernet.util import numpy2hdf
+from spodernet.util import write_to_hdf
 
 import os
 
@@ -172,10 +172,10 @@ def file2hdf(paths, names, lower_list=None, add_to_vocab_list=None,
             Sups[row] = support_lens[row]
 
         write_path = os.path.join(os.path.dirname(path), name)
-        numpy2hdf(write_path + '_inputs.hdf5', X)
-        numpy2hdf(write_path + '_support.hdf5', S)
-        numpy2hdf(write_path + '_input_lengths.hdf5', Xs)
-        numpy2hdf(write_path + '_support_lengths.hdf5', Sups)
-        numpy2hdf(write_path + '_targets.hdf5', T)
+        write_to_hdf(write_path + '_inputs.hdf5', X)
+        write_to_hdf(write_path + '_support.hdf5', S)
+        write_to_hdf(write_path + '_input_lengths.hdf5', Xs)
+        write_to_hdf(write_path + '_support_lengths.hdf5', Sups)
+        write_to_hdf(write_path + '_targets.hdf5', T)
 
     return [return_file_names, vocab]

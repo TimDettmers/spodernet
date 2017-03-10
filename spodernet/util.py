@@ -7,7 +7,7 @@ import time
 from spodernet.logger import Logger
 log = Logger('util.py.txt')
 
-def numpy2hdf(path, data):
+def write_to_hdf(path, data):
     '''Writes a numpy array to a hdf5 file under the given path.'''
     #log.debug('Saving hdf5 file to: {0}', path)
     h5file = h5py.File(path, "w")
@@ -15,7 +15,7 @@ def numpy2hdf(path, data):
     h5file.close()
 
 
-def hdf2numpy(path, keyword='default'):
+def load_hdf_file(path, keyword='default'):
     '''Reads and returns a numpy array for a hdf5 file'''
     #log.debug('Reading hdf5 file from: {0}', path)
     h5file = h5py.File(path, 'r')
@@ -28,9 +28,9 @@ def load_hdf5_paths(paths, limit=None):
     data = []
     for path in paths:
         if limit != None:
-            data.append(hdf2numpy(path)[:limit])
+            data.append(load_hdf_file(path)[:limit])
         else:
-            data.append(hdf2numpy(path))
+            data.append(load_hdf_file(path))
     return data
 
 def get_home_path():

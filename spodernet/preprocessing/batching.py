@@ -10,7 +10,7 @@ import datetime
 import numpy as np
 import cPickle as pickle
 
-from spodernet.util import get_data_path, hdf2numpy, Timer
+from spodernet.util import get_data_path, load_hdf_file, Timer
 from spodernet.logger import Logger
 from spodernet.global_config import Config, Backends
 from spodernet.hooks import ETAHook
@@ -23,10 +23,10 @@ log = Logger('batching.py.txt')
 class TorchConverter(IAtBatchPreparedObservable):
     def at_batch_prepared(self, batch_parts):
         inp, inp_len, sup, sup_len, t, idx = batch_parts
-        inp = Variable(torch.LongTensor(inp))
-        inp_len = Variable(torch.IntTensor(np.int32(inp_len)))
-        sup = Variable(torch.LongTensor(sup))
-        sup_len = Variable(torch.IntTensor(np.int32(sup_len)))
+        inp = Variable(torch.LongTensor(np.int64(inp)))
+        inp_len = Variable(torch.IntTensor(np.int64(inp_len)))
+        sup = Variable(torch.LongTensor(np.int64(sup)))
+        sup_len = Variable(torch.IntTensor(np.int64(sup_len)))
         t = Variable(torch.LongTensor(np.int64(t)))
         return [inp, inp_len, sup, sup_len, t, idx]
 
@@ -82,11 +82,11 @@ class DataLoaderSlave(Thread):
             for paths in current_paths:
                 for path in paths:
                     if path not in self.current_data:
-                        self.current_data[path] = hdf2numpy(path)
+                        self.current_data[path] = load_hdf_file(path)
         else:
             for path in current_paths:
                 if path not in self.current_data:
-                    self.current_data[path] = hdf2numpy(path)
+                    self.current_data[path] = load_hdf_file(path)
 
     def create_batch_parts(self, current_paths, start, end):
         # index loaded data for minibatch
