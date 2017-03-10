@@ -11,7 +11,7 @@ from spodernet.preprocessing.processors import AddToVocab, CreateBinsByNestedLen
 from spodernet.preprocessing.batching import StreamBatcher
 from spodernet.logger import Logger, LogLevel
 from spodernet.util import Timer
-from spodernet.global_config import Config, Backends
+from spodernet.global_config import Config, Backends, TensorFlowConfig
 
 #import tensorflow as tf
 
@@ -24,7 +24,6 @@ from scipy.stats.mstats import normaltest
 #import torch.nn.utils.rnn as rnn_utils
 np.set_printoptions(suppress=True)
 import time
-import tensorflow as tf
 
 import tensorflow as tf
 from tensorflow import placeholder
@@ -35,17 +34,11 @@ class TFSNLI(object):
         self.vocab = vocab
 
     def forward(self, embedding_size=128, output_size=256, scope=None):
-
-        Q = tf.placeholder(tf.int64, [self.batch_size, None])
-        S = tf.placeholder(tf.int64, [self.batch_size, None])
-        Q_len = tf.placeholder(tf.int64, [self.batch_size,])
-        S_len = tf.placeholder(tf.int64, [self.batch_size,])
-        t = tf.placeholder(tf.int64, [self.batch_size])
-        self.Q = Q
-        self.S = S
-        self.Q_len = Q_len
-        self.S_len = S_len
-        self.t = t
+        Q = TensorFlowConfig.inp
+        S = TensorFlowConfig.support
+        Q_len = TensorFlowConfig.input_length
+        S_len = TensorFlowConfig.support_length
+        t = TensorFlowConfig.target
 
         embeddings = tf.get_variable("embeddings", [self.vocab.num_embeddings, embedding_size],
                                 initializer=tf.random_normal_initializer(0., 1./np.sqrt(embedding_size)),
@@ -270,42 +263,27 @@ def train_tensorflow(train_batcher, dev_batcher, test_batcher, model, epochs=5):
 
     tf.global_variables_initializer().run(session=sess)
     for epoch in range(epochs):
-        for i, (inp, inp_len, sup, sup_len, t, idx) in enumerate(train_batcher):
-            print(i)
-            feed_dict = {}
-            feed_dict[model.Q] = inp
-            feed_dict[model.S] = sup
-            feed_dict[model.Q_len] = inp_len
-            feed_dict[model.S_len] = sup_len
-            feed_dict[model.t] = t
-
-
+        for i, feed_dict in enumerate(train_batcher):
             _, current_loss, argmax = sess.run([min_op, loss, predict], feed_dict=feed_dict)
 
-
-            train_batcher.state.argmax = argmax
-            train_batcher.state.targets = t
-            if i == 100: break
-
-        for i, (inp, inp_len, sup, sup_len, t, idx) in enumerate(dev_batcher):
             print(i)
-            feed_dict = {}
-            feed_dict[model.Q] = inp
-            feed_dict[model.S] = sup
-            feed_dict[model.Q_len] = inp_len
-            feed_dict[model.S_len] = sup_len
-            feed_dict[model.t] = t
+            train_batcher.state.argmax = argmax
+            train_batcher.state.targets = feed_dict[TensorFlowConfig.target]
+            if i == 20: break
 
+        for i, feed_dict in enumerate(dev_batcher):
             argmax = sess.run([predict], feed_dict=feed_dict)[0]
+            print(i)
+            if i == 20: break
 
             dev_batcher.state.argmax = argmax
-            dev_batcher.state.targets = t
+            dev_batcher.state.targets = feed_dict[TensorFlowConfig.target]
 
 
 def main():
     Logger.GLOBAL_LOG_LEVEL = LogLevel.DEBUG
-    Config.backend = Backends.TORCH
-    Config.cuda = True
+    Config.backend = Backends.TENSORFLOW
+    Config.cuda = False
 
     do_process = False
     if do_process:
@@ -317,12 +295,16 @@ def main():
     vocab.load_from_disk()
 
     batch_size = 128
+    TensorFlowConfig.init_batch_size(batch_size)
     train_batcher = StreamBatcher('snli_example', 'snli_train', batch_size, randomize=True, loader_threads=4)
     dev_batcher = StreamBatcher('snli_example', 'snli_dev', batch_size)
     test_batcher  = StreamBatcher('snli_example', 'snli_test', batch_size)
 
     train_batcher.subscribe_to_events(AccuracyHook('Train', print_every_x_batches=100))
     dev_batcher.subscribe_to_events(AccuracyHook('Dev', print_every_x_batches=1000))
+    eta = ETAHook('Train', 10)
+    train_batcher.subscribe_to_events(eta)
+    train_batcher.subscribe_to_start_of_epoch_event(eta)
 
     if Config.backend == Backends.TORCH:
         print('using torch backend')
