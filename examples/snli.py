@@ -24,6 +24,7 @@ from scipy.stats.mstats import normaltest
 #import torch.nn.utils.rnn as rnn_utils
 np.set_printoptions(suppress=True)
 import time
+import tensorflow as tf
 
 import tensorflow as tf
 from tensorflow import placeholder
@@ -243,6 +244,7 @@ def train_torch(train_batcher, dev_batcher, test_batcher, model, epochs=5):
             #train_batcher.add_to_hook_histories(t, argmax, loss)
             train_batcher.state.argmax = argmax
             train_batcher.state.targets = t
+            if i == 100: break
             t0.tick()
         t0.tick()
         t0.tock()
@@ -254,7 +256,6 @@ def train_torch(train_batcher, dev_batcher, test_batcher, model, epochs=5):
             dev_batcher.state.argmax = argmax
             dev_batcher.state.targets = t
             #dev_batcher.add_to_hook_histories(t, argmax, loss)
-    print(time.time()-t0)
 
 def train_tensorflow(train_batcher, dev_batcher, test_batcher, model, epochs=5):
     optimizer = tf.train.AdamOptimizer(0.001)
@@ -284,6 +285,7 @@ def train_tensorflow(train_batcher, dev_batcher, test_batcher, model, epochs=5):
 
             train_batcher.state.argmax = argmax
             train_batcher.state.targets = t
+            if i == 100: break
 
         for i, (inp, inp_len, sup, sup_len, t, idx) in enumerate(dev_batcher):
             print(i)
@@ -328,7 +330,7 @@ def main():
         if Config.cuda:
             model.cuda()
 
-        train_torch(train_batcher, dev_batcher, test_batcher, model, epochs=5)
+        train_torch(train_batcher, dev_batcher, test_batcher, model, epochs=2)
     else:
         print('using tensorflow backend')
         model = TFSNLI(batch_size=128, vocab=vocab)

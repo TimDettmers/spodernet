@@ -1,5 +1,4 @@
 from os.path import join
-from Queue import Queue, Empty
 from threading import Thread, Event
 from collections import namedtuple
 from torch.autograd import Variable
@@ -9,6 +8,7 @@ import time
 import datetime
 import numpy as np
 import cPickle as pickle
+import Queue
 
 from spodernet.util import get_data_path, load_hdf_file, Timer
 from spodernet.logger import Logger
@@ -77,6 +77,7 @@ class DataLoaderSlave(Thread):
         self.paths = paths
         self.stopping = False
         self._stop = Event()
+        self.daemon = True
 
     def stop(self):
         self._stop.set()
@@ -138,7 +139,7 @@ class DataLoaderSlave(Thread):
             # thus causing ugly exceptions
             try:
                 batch_idx = self.stream_batcher.work.get(block=False, timeout=1.0)
-            except Empty:
+            except:
                 continue
 
             if self.randomize:
@@ -182,8 +183,8 @@ class StreamBatcher(object):
         self.prefetch_batch_idx = 0
         self.loaders = []
         self.prepared_batches = {}
-        self.prepared_batchidx = Queue()
-        self.work = Queue()
+        self.prepared_batchidx = Queue.Queue()
+        self.work = Queue.Queue()
         self.cached_batches = {}
         eta = ETAHook(name, print_every_x_batches=1000)
         self.end_iter_observers = [eta]
