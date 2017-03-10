@@ -25,37 +25,54 @@ from scipy.stats.mstats import normaltest
 np.set_printoptions(suppress=True)
 import time
 
+import tensorflow as tf
+from tensorflow import placeholder
+
 class TFSNLI(object):
-    def model(self):
-        question = placeholders['question']
-        question_lengths = placeholders["question_lengths"]
-        support = placeholders["support"]
-        support_lengths = placeholders["support_lengths"]
-        targets = placeholders["answers"]
+    def __init__(self, batch_size, vocab):
+        self.batch_size = batch_size
+        self.vocab = vocab
+
+    def forward(self, embedding_size=128, output_size=256, scope=None):
+
+        Q = tf.placeholder(tf.int64, [self.batch_size, None])
+        S = tf.placeholder(tf.int64, [self.batch_size, None])
+        Q_len = tf.placeholder(tf.int64, [self.batch_size,])
+        S_len = tf.placeholder(tf.int64, [self.batch_size,])
+        t = tf.placeholder(tf.int64, [self.batch_size])
+        self.Q = Q
+        self.S = S
+        self.Q_len = Q_len
+        self.S_len = S_len
+        self.t = t
+
+        embeddings = tf.get_variable("embeddings", [self.vocab.num_embeddings, embedding_size],
+                                initializer=tf.random_normal_initializer(0., 1./np.sqrt(embedding_size)),
+                                trainable=True, dtype="float32")
 
         with tf.variable_scope("embedders") as varscope:
-            question_embedded = nvocab(question)
+            seqQ = tf.nn.embedding_lookup(embeddings, Q)
             varscope.reuse_variables()
-            support_embedded = nvocab(support)
-
-
+            seqS = tf.nn.embedding_lookup(embeddings, S)
 
         with tf.variable_scope(scope or "conditional_reader_seq1") as varscope1:
             #seq1_states: (c_fw, h_fw), (c_bw, h_bw)
-            _, seq1_states = self.reader(seq1, seq1_lengths, output_size, scope=varscope1, drop_keep_prob=drop_keep_prob)
+            _, seq1_states = self.reader(seqQ, Q_len, output_size, scope=varscope1)
         with tf.variable_scope(scope or "conditional_reader_seq2") as varscope2:
             varscope1.reuse_variables()
             # each [batch_size x max_seq_length x output_size]
-            outputs, states = self.reader(seq2, seq2_lengths, output_size, seq1_states, scope=varscope2, drop_keep_prob=drop_keep_prob)
+            outputs, states = self.reader(seqS, S_len, output_size, seq1_states, scope=varscope2)
 
         output = tf.concat([states[0][1], states[1][1]], 1)
 
-        logits, loss, predict = self.predictor(output, targets, options["answer_size"])
+        logits, loss, predict = self.predictor(output, t, 3)
 
-    def reader(self, inputs, lengths, output_size, contexts=(None, None), scope=None, drop_keep_prob=1.0):
+        return logits, loss, predict
+
+    def reader(self, inputs, lengths, output_size, contexts=(None, None), scope=None):
         with tf.variable_scope(scope or "reader") as varscope:
 
-            cell = tf.nn.rnn_cell.LSTMCell(output_size, state_is_tuple=True,initializer=tf.contrib.layers.xavier_initializer())
+            cell = tf.contrib.rnn.LSTMCell(output_size, state_is_tuple=True,initializer=tf.contrib.layers.xavier_initializer())
 
             outputs, states = tf.nn.bidirectional_dynamic_rnn(
                 cell,
@@ -239,9 +256,57 @@ def train_torch(train_batcher, dev_batcher, test_batcher, model, epochs=5):
             #dev_batcher.add_to_hook_histories(t, argmax, loss)
     print(time.time()-t0)
 
+def train_tensorflow(train_batcher, dev_batcher, test_batcher, model, epochs=5):
+    optimizer = tf.train.AdamOptimizer(0.001)
+    t0 = time.time()
+    print('starting training...')
+    t0= Timer()
+    sess = tf.Session()
+
+    logits, loss, predict = model.forward()
+
+    min_op = optimizer.minimize(loss)
+
+    tf.global_variables_initializer().run(session=sess)
+    for epoch in range(epochs):
+        for i, (inp, inp_len, sup, sup_len, t, idx) in enumerate(train_batcher):
+            print(i)
+            feed_dict = {}
+            feed_dict[model.Q] = inp
+            feed_dict[model.S] = sup
+            feed_dict[model.Q_len] = inp_len
+            feed_dict[model.S_len] = sup_len
+            feed_dict[model.t] = t
+
+
+            _, current_loss, argmax = sess.run([min_op, loss, predict], feed_dict=feed_dict)
+
+
+            train_batcher.state.argmax = argmax
+            train_batcher.state.targets = t
+
+            if i == 100: break
+
+        for i, (inp, inp_len, sup, sup_len, t, idx) in enumerate(dev_batcher):
+            print(i)
+            feed_dict = {}
+            feed_dict[model.Q] = inp
+            feed_dict[model.S] = sup
+            feed_dict[model.Q_len] = inp_len
+            feed_dict[model.S_len] = sup_len
+            feed_dict[model.t] = t
+
+            argmax = sess.run([predict], feed_dict=feed_dict)[0]
+
+            train_batcher.state.argmax = argmax
+            train_batcher.state.targets = t
+
+            if i == 100: break
+
+
 def main():
     Logger.GLOBAL_LOG_LEVEL = LogLevel.DEBUG
-    Config.backend = Backends.TORCH
+    Config.backend = Backends.TENSORFLOW
     Config.cuda = False
 
     do_process = False
@@ -258,14 +323,19 @@ def main():
     dev_batcher = StreamBatcher('snli_example', 'snli_dev', batch_size)
     test_batcher  = StreamBatcher('snli_example', 'snli_test', batch_size)
 
-    model = SNLIClassification(batch_size, vocab, use_cuda=Config.cuda)
-    if Config.cuda:
-        model.cuda()
+    train_batcher.subscribe_to_events(AccuracyHook('Train', print_every_x_batches=10))
+    dev_batcher.subscribe_to_events(AccuracyHook('Dev', print_every_x_batches=10))
 
-    train_batcher.subscribe_to_events(AccuracyHook('Train', print_every_x_batches=100))
-    dev_batcher.subscribe_to_events(AccuracyHook('Dev', print_every_x_batches=1000))
+    if Config.backend == Backends.TORCH:
+        model = SNLIClassification(batch_size, vocab, use_cuda=Config.cuda)
+        if Config.cuda:
+            model.cuda()
 
-    train_torch(train_batcher, dev_batcher, test_batcher, model, epochs=5)
+        train_torch(train_batcher, dev_batcher, test_batcher, model, epochs=5)
+    else:
+        model = TFSNLI(batch_size=128, vocab=vocab)
+
+        train_tensorflow(train_batcher, dev_batcher, test_batcher, model)
 
 
 if __name__ == '__main__':

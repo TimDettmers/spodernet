@@ -7,6 +7,7 @@ import datetime
 
 from spodernet.observables import IAtIterEndObservable, IAtEpochEndObservable, IAtEpochStartObservable
 from spodernet.util import Timer
+from spodernet.global_config import Config, Backends
 
 from spodernet.logger import Logger
 log = Logger('hooks.py.txt')
@@ -89,8 +90,14 @@ class AccuracyHook(AbstractHook):
         super(AccuracyHook, self).__init__(name, 'Accuracy', print_every_x_batches)
 
     def calculate_metric(self, state):
-        n = state.targets.size()[0]
-        return torch.sum(state.targets==state.argmax)/np.float32(n)
+        if Config.backend == Backends.TORCH:
+            n = state.argmax.size()[0]
+            return torch.sum(state.targets==state.argmax)/np.float32(n)
+        elif Config.backend == Backends.TENSORFLOW:
+            n = state.argmax.shape[0]
+            return np.sum(state.targets==state.argmax)/np.float32(n)
+        else:
+            raise Exception('Backend has unsupported value {0}'.format(Config.backend))
 
 class LossHook(AbstractHook):
     def __init__(self, name='', print_every_x_batches=1000):
