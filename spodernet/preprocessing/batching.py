@@ -1,6 +1,6 @@
 from os.path import join
-from Queue import Queue
-from threading import Thread
+from Queue import Queue, Empty
+from threading import Thread, Event
 from collections import namedtuple
 from torch.autograd import Variable
 
@@ -65,7 +65,6 @@ class DataLoaderSlave(Thread):
         super(DataLoaderSlave, self).__init__()
         if randomize:
             assert seed is not None, 'For randomized data loadingg a seed needs to be set!'
-        self.daemon = True
         self.stream_batcher = stream_batcher
         self.batchidx2paths = batchidx2paths
         self.batchidx2start_end = batchidx2start_end
@@ -76,6 +75,14 @@ class DataLoaderSlave(Thread):
         self.shard_fractions = shard_fractions
         self.shard2batchidx = shard2batchidx
         self.paths = paths
+        self.stopping = False
+        self._stop = Event()
+
+    def stop(self):
+        self._stop.set()
+
+    def stopped(self):
+        return self._stop.isSet()
 
     def load_files_if_needed(self, current_paths):
         if isinstance(current_paths[0], list):
@@ -124,8 +131,15 @@ class DataLoaderSlave(Thread):
         return batch_parts
 
     def run(self):
-        while True:
-            batch_idx = self.stream_batcher.work.get()
+        while not self.stopped():
+
+            # we have this to terminate threads gracefully
+            # if we use daemons then the terminational signal might not be heard while loading files
+            # thus causing ugly exceptions
+            try:
+                batch_idx = self.stream_batcher.work.get(block=False, timeout=1.0)
+            except Empty:
+                continue
 
             if self.randomize:
                 shard_idx = self.rdm.choice(len(self.shard2batchidx.keys()), 1, p=self.shard_fractions)[0]
@@ -185,10 +199,9 @@ class StreamBatcher(object):
             if Config.cuda:
                 self.subscribe_to_batch_prepared_event(TorchCUDAConverter(torch.cuda.current_device()))
         elif Config.backend == Backends.TENSORFLOW:
-            raise NotImplementedError('Tensorflow is not yet supported')
-        else:
-            # NUMPY backend
             pass
+        else:
+            raise Exception('Backend has unsupported value {0}'.format(Config.backend))
 
 
         batchidx2paths, batchidx2start_end, shard2batchidx = self.create_batchidx_maps(config['counts'])
@@ -203,6 +216,15 @@ class StreamBatcher(object):
         while self.prefetch_batch_idx < loader_threads:
             self.work.put(self.prefetch_batch_idx)
             self.prefetch_batch_idx += 1
+
+    def __del__(self):
+        log.debug('Stopping threads...')
+        for worker in self.loaders:
+            worker.stop()
+
+        log.debug('Waiting for threads to finish...')
+        for worker in self.loaders:
+            worker.join()
 
     def subscribe_end_of_iter_event(self, observer):
         self.end_iter_observers.append(observer)
