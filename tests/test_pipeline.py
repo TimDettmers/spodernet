@@ -15,11 +15,10 @@ from spodernet.preprocessing.processors import Tokenizer, SaveStateToList, AddTo
 from spodernet.preprocessing.processors import StreamToHDF5, CreateBinsByNestedLength
 from spodernet.preprocessing.vocab import Vocab
 from spodernet.preprocessing.batching import StreamBatcher
-from spodernet.util import get_data_path, hdf2numpy
+from spodernet.util import get_data_path, load_hdf_file
 from spodernet.global_config import Config, Backends
 
 from spodernet.logger import Logger, LogLevel
-
 log = Logger('test_pipeline.py.txt')
 
 Logger.GLOBAL_LOG_LEVEL = LogLevel.STATISTICAL
@@ -472,7 +471,7 @@ def test_stream_to_hdf5():
         data_idx = 0
         for path in paths:
             assert os.path.exists(path), 'This file should have been created by the HDF5Streamer: {0}'.format(path)
-            shard = hdf2numpy(path)
+            shard = load_hdf_file(path)
             start = data_idx*2
             end = (data_idx + 1)*2
             np.testing.assert_array_equal(shard, data[start:end], 'HDF5 Stream data not equal for path {0}'.format(path))
@@ -559,8 +558,8 @@ def test_bin_search():
     num_samples_bins = bin_creator.total_bin_count
     cumulative_count = 0.0
     for i, (path_inp, path_sup) in enumerate(zip(paths_inp, paths_sup)):
-        inp = hdf2numpy(path_inp)
-        sup = hdf2numpy(path_sup)
+        inp = load_hdf_file(path_inp)
+        sup = load_hdf_file(path_sup)
         l1 = bin_creator.config['path2len'][path_inp]
         l2 = bin_creator.config['path2len'][path_sup]
         count = bin_creator.config['path2count'][path_sup]
@@ -656,6 +655,12 @@ def test_non_random_stream_batcher(samples_per_file):
     # 4. test data equality
     for epoch in range(epochs):
         for x, x_len, s, s_len, t, idx in batcher:
+            assert np.int32 == x_len.dtype, 'Input length type should be int32!'
+            assert np.int32 == s_len.dtype, 'Support length type should be int32!'
+            assert np.int32 == x.dtype, 'Input type should be int32!'
+            assert np.int32 == s.dtype, 'Input type should be int32!'
+            assert np.int32 == t.dtype, 'Target type should be int32!'
+            assert np.int32 == idx.dtype, 'Index type should be int32!'
             np.testing.assert_array_equal(X[idx], x, 'Input data not equal!')
             np.testing.assert_array_equal(S[idx], s, 'Support data not equal!')
             np.testing.assert_array_equal(X_len[idx], x_len, 'Input length data not equal!')
@@ -731,6 +736,12 @@ def test_random_stream_batcher():
     # 4. test data equality
     for epoch in range(epochs):
         for x, x_len, s, s_len, t, idx in batcher:
+            assert np.int32 == x_len.dtype, 'Input length type should be int32!'
+            assert np.int32 == s_len.dtype, 'Support length type should be int32!'
+            assert np.int32 == x.dtype, 'Input type should be int32!'
+            assert np.int32 == s.dtype, 'Input type should be int32!'
+            assert np.int32 == t.dtype, 'Target type should be int32!'
+            assert np.int32 == idx.dtype, 'Index type should be int32!'
             np.testing.assert_array_equal(X[idx], x, 'Input data not equal!')
             np.testing.assert_array_equal(S[idx], s, 'Support data not equal!')
             np.testing.assert_array_equal(X_len[idx], x_len, 'Input length data not equal!')
@@ -805,6 +816,12 @@ def test_bin_streamer():
     # 4. test data equality
     for epoch in range(epochs):
         for x, x_len, s, s_len, t, idx in batcher:
+            assert np.int32 == x_len.dtype, 'Input length type should be int32!'
+            assert np.int32 == s_len.dtype, 'Support length type should be int32!'
+            assert np.int32 == x.dtype, 'Input type should be int32!'
+            assert np.int32 == s.dtype, 'Input type should be int32!'
+            assert np.int32 == t.dtype, 'Target type should be int32!'
+            assert np.int32 == idx.dtype, 'Index type should be int32!'
             np.testing.assert_array_equal(X[idx, :x_len[0]], x, 'Input data not equal!')
             np.testing.assert_array_equal(S[idx, :s_len[0]], s, 'Support data not equal!')
             np.testing.assert_array_equal(X_len[idx], x_len, 'Input length data not equal!')

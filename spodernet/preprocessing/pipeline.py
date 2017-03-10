@@ -1,6 +1,7 @@
 from os.path import join
 
 import os
+import shutil
 import simplejson as json
 
 from spodernet.preprocessing.vocab import Vocab
@@ -9,7 +10,7 @@ from spodernet.logger import Logger
 log = Logger('pipeline.py.txt')
 
 class Pipeline(object):
-    def __init__(self, name):
+    def __init__(self, name, delete_all_previous_data=False):
         self.text_processors = []
         self.sent_processors = []
         self.token_processors = []
@@ -21,7 +22,13 @@ class Pipeline(object):
             log.debug_once('Pipeline path {0} does not exist. Creating folder...', self.root)
             os.mkdir(self.root)
         else:
-            log.debug_once('Pipeline path {0} does exist', self.root)
+            if delete_all_previous_data:
+                log.warning('delete_all_previous_data=True! Deleting all folder contents of folder {0}!', self.root)
+                shutil.rmtree(self.root)
+                log.info('Recreating path: {0}', self.root)
+                os.mkdir(self.root)
+            else:
+                log.warning('Pipeline path {0} already exist. This pipeline may overwrite data in this path!', self.root)
 
         self.state = {'name' : name, 'home' : home, 'path' : self.root, 'data' : {}}
         self.state['vocab'] = Vocab(path=join(self.root, 'vocab'))

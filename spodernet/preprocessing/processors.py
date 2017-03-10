@@ -4,7 +4,7 @@ import numpy as np
 import cPickle as pickle
 import os
 
-from spodernet.util import get_data_path, numpy2hdf, make_dirs_if_not_exists, hdf2numpy
+from spodernet.util import get_data_path, write_to_hdf, make_dirs_if_not_exists, load_hdf_file
 
 from spodernet.logger import Logger
 log = Logger('processors.py.txt')
@@ -71,8 +71,8 @@ class AbstractLoopLevelListOfTokensProcessor(AbstractProcessor):
             i = 0
             level = sample
             while not (isinstance(level, basestring)
-                       or isinstance(level, long)
-                       or isinstance(level, np.int64)):
+                       or isinstance(level, int)
+                       or isinstance(level, np.int32)):
                     level = level[0]
                     i+=1
             self.successive_for_loops_to_list_of_tokens = i-1
@@ -161,7 +161,7 @@ class SaveLengthsToState(AbstractLoopLevelListOfTokensProcessor):
 
     def process_list_of_tokens(self, tokens, inp_type):
         if inp_type not in self.data: self.data[inp_type] = []
-        self.data[inp_type].append(len(tokens))
+        self.data[inp_type].append(int(len(tokens)))
         log.statistical('A list of tokens: {0}', 0.0001, tokens)
         log.debug_once('Pipeline {1}: A list of tokens: {0}', tokens, self.state['name'])
         return tokens
@@ -221,7 +221,10 @@ class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
             self.save_to_hdf5(inp_type)
 
         if self.idx % 10000 == 0:
-            log.debug('Sample index: {0}', self.idx)
+            if self.idx % 50000 == 0:
+                log.info('Processed {0} samples so far...', self.idx)
+            else:
+                log.debug('Processed {0} samples so far...', self.idx)
 
         if self.idx == self.num_samples:
             counts = np.array(self.config['sample_count'])
@@ -239,7 +242,7 @@ class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
 
     def save_to_hdf5(self, inp_type):
         idx = self.shard_id[inp_type]
-        X = np.array(self.data[inp_type])
+        X = np.array(self.data[inp_type], dtype=np.int32)
         file_name = inp_type + '_' + str(idx+1) + '.hdf5'
         if isinstance(X[0], list):
             new_X = []
@@ -253,7 +256,7 @@ class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
             log.debug("{0}", X)
         log.debug('Writing hdf5 file for input type {0} to disk. Using index {1} and path {2}', inp_type, idx, join(self.base_path, file_name))
         log.debug('Writing hdf5 data. One sample row: {0}, shape: {1}, type: {2}', X[0], X.shape, X.dtype)
-        numpy2hdf(join(self.base_path, file_name), X)
+        write_to_hdf(join(self.base_path, file_name), X)
         if idx not in self.paths: self.paths[idx] = []
         self.paths[idx].append(join(self.base_path, file_name))
 
@@ -265,13 +268,13 @@ class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
         if inp_type != 'target':
             start = idx*self.samples_per_file
             end = (idx+1)*self.samples_per_file
-            X_len = np.array(self.state['data']['lengths'][inp_type][start:end])
+            X_len = np.array(self.state['data']['lengths'][inp_type][start:end], dtype=np.int32)
             file_name_len = inp_type + '_lengths_' + str(idx+1) + '.hdf5'
-            numpy2hdf(join(self.base_path, file_name_len), X_len)
+            write_to_hdf(join(self.base_path, file_name_len), X_len)
             self.paths[idx].append(join(self.base_path, file_name_len))
         else:
             file_name_index = 'index_' + str(idx+1) + '.hdf5'
-            numpy2hdf(join(self.base_path, file_name_index), np.arange(self.idx - X.shape[0], self.idx))
+            write_to_hdf(join(self.base_path, file_name_index), np.arange(self.idx - X.shape[0], self.idx, dtype=np.int32))
             self.paths[idx].append(join(self.base_path, file_name_index))
 
 
@@ -313,17 +316,18 @@ class CreateBinsByNestedLength(AbstractLoopLevelListOfTokensProcessor):
         if not self.performed_search:
             self.perform_bin_search()
 
-            assert (   isinstance(tokens[0], long)
-                    or isinstance(tokens[0], np.int64)
-                    or isinstance(tokens[0], int)
+            assert (   isinstance(tokens[0], int)
                     or isinstance(tokens[0], np.int32)), \
-                    'Token need to be either int or longs (or numpy int or longs) for binning to work!'
+                    'Token need to be either int or numpy int for binning to work!'
 
         idx = self.inp_type2idx[inp_type]
         self.idx2data[inp_type][idx] = tokens
 
         if inp_type == 'input' and idx % 10000 == 0:
-            log.debug('Sample index: {0}', idx)
+            if idx % 50000 == 0:
+                log.info('Processed {0} samples so far...', idx)
+            else:
+                log.debug('Processed {0} samples so far...', idx)
 
         if idx in self.idx2data['input'] and idx in self.idx2data['support'] and idx in self.idx2data['target']:
             x1 = self.idx2data['input'][idx]
@@ -336,20 +340,20 @@ class CreateBinsByNestedLength(AbstractLoopLevelListOfTokensProcessor):
                 self.inp_type2idx[inp_type] += 1
                 return
             bin_idx = self.length_key2bin_idx[key]
-            self.binidx2data['input'][bin_idx].append(np.array(x1))
-            self.binidx2data['support'][bin_idx].append(np.array(x2))
+            self.binidx2data['input'][bin_idx].append(np.array(x1, dtype=np.int32))
+            self.binidx2data['support'][bin_idx].append(np.array(x2, dtype=np.int32))
             self.binidx2data['index'][bin_idx].append(idx)
-            self.binidx2data['target'][bin_idx].append(np.array(t))
+            self.binidx2data['target'][bin_idx].append(np.array(t, dtype=np.int32))
             self.binidx2numprocessed[bin_idx] += 1
             self.inp_type2idx[inp_type] += 1
 
             if (len(self.binidx2data['input']) % 1000 == 0
                or (self.binidx2numprocessed[bin_idx] == self.binidx2bincount[bin_idx]
                          and len(self.binidx2data['input'][bin_idx]) > 0)):
-                X_new = np.array(self.binidx2data['input'][bin_idx])
-                S_new = np.array(self.binidx2data['support'][bin_idx])
-                idx_new = np.array(self.binidx2data['index'][bin_idx])
-                t_new = np.array(self.binidx2data['target'][bin_idx]).reshape(-1,)
+                X_new = np.array(self.binidx2data['input'][bin_idx], dtype=np.int32)
+                S_new = np.array(self.binidx2data['support'][bin_idx], dtype=np.int32)
+                idx_new = np.array(self.binidx2data['index'][bin_idx], dtype=np.int32)
+                t_new = np.array(self.binidx2data['target'][bin_idx], dtype=np.int32).reshape(-1,)
 
                 pathX = join(self.base_path, 'input_bin_{0}.hdf5'.format(bin_idx))
                 pathS = join(self.base_path, 'support_bin_{0}.hdf5'.format(bin_idx))
@@ -359,10 +363,10 @@ class CreateBinsByNestedLength(AbstractLoopLevelListOfTokensProcessor):
                 pathT = join(self.base_path, 'target_bin_{0}.hdf5'.format(bin_idx))
 
                 if os.path.exists(pathX):
-                    X_old = hdf2numpy(pathX)
-                    S_old = hdf2numpy(pathS)
-                    idx_old = hdf2numpy(pathIdx)
-                    t_old = hdf2numpy(pathT)
+                    X_old = load_hdf_file(pathX)
+                    S_old = load_hdf_file(pathS)
+                    idx_old = load_hdf_file(pathIdx)
+                    t_old = load_hdf_file(pathT)
                     X = np.vstack([X_old, X_new])
                     S = np.vstack([S_old, S_new])
                     index = np.vstack([idx_old, idx_new])
@@ -373,12 +377,12 @@ class CreateBinsByNestedLength(AbstractLoopLevelListOfTokensProcessor):
                     index = idx_new
                     T = t_new
 
-                numpy2hdf(pathX, X)
-                numpy2hdf(pathS, S)
-                numpy2hdf(pathX_len, np.ones((X.shape[0]), dtype=np.int32)*X.shape[1])
-                numpy2hdf(pathS_len, np.ones((S.shape[0]), dtype=np.int32)*S.shape[1])
-                numpy2hdf(pathIdx, index)
-                numpy2hdf(pathT, T)
+                write_to_hdf(pathX, X)
+                write_to_hdf(pathS, S)
+                write_to_hdf(pathX_len, np.ones((X.shape[0]), dtype=np.int32)*X.shape[1])
+                write_to_hdf(pathS_len, np.ones((S.shape[0]), dtype=np.int32)*S.shape[1])
+                write_to_hdf(pathIdx, index)
+                write_to_hdf(pathT, T)
                 del self.binidx2data['input'][bin_idx][:]
                 del self.binidx2data['support'][bin_idx][:]
                 del self.binidx2data['index'][bin_idx][:]
@@ -391,8 +395,8 @@ class CreateBinsByNestedLength(AbstractLoopLevelListOfTokensProcessor):
 
 
     def perform_bin_search(self):
-        l1 = np.array(self.state['data']['lengths']['input'])
-        l2 = np.array(self.state['data']['lengths']['support'])
+        l1 = np.array(self.state['data']['lengths']['input'], dtype=np.int32)
+        l2 = np.array(self.state['data']['lengths']['support'], dtype=np.int32)
         if self.pure_bins == False:
             raise NotImplementedError('Bin search currently only works for bins that feature samples of the same length')
         if self.pure_bins:

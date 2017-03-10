@@ -3,7 +3,7 @@ from __future__ import print_function
 
 from spodernet.data.snli2spoder import snli2spoder
 from spodernet.preprocessing import spoder2hdf5
-from spodernet.util import hdf2numpy
+from spodernet.util import load_hdf_file
 from spodernet.preprocessing.batching import Batcher
 from spodernet.hooks import AccuracyHook
 from spodernet.models import DualLSTM
@@ -96,14 +96,14 @@ def main():
     X, S, T = hdf5paths[0]
     
     datasets = [
-        np.float32(hdf2numpy('/home/tim/data/mnist/X.hdf5',
+        np.float32(load_hdf_file('/home/tim/data/mnist/X.hdf5',
             'Default')).reshape(-1, 28, 28),
-        np.float32(hdf2numpy('/home/tim/data/mnist/X.hdf5',
+        np.float32(load_hdf_file('/home/tim/data/mnist/X.hdf5',
             'Default')).reshape(-1, 28, 28),
-                np.int64(hdf2numpy('/home/tim/data/mnist/y.hdf5',
+                np.int64(load_hdf_file('/home/tim/data/mnist/y.hdf5',
                     'Default')).flatten()]
     
-    #datasets = [hdf2numpy(X), hdf2numpy(S), hdf2numpy(T)]
+    #datasets = [load_hdf_file(X), load_hdf_file(S), load_hdf_file(T)]
     #inp, sup, t = datasets
     #for row in range(10):
     #    hypo = ''
