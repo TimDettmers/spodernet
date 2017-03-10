@@ -285,8 +285,6 @@ def train_tensorflow(train_batcher, dev_batcher, test_batcher, model, epochs=5):
             train_batcher.state.argmax = argmax
             train_batcher.state.targets = t
 
-            if i == 100: break
-
         for i, (inp, inp_len, sup, sup_len, t, idx) in enumerate(dev_batcher):
             print(i)
             feed_dict = {}
@@ -298,16 +296,14 @@ def train_tensorflow(train_batcher, dev_batcher, test_batcher, model, epochs=5):
 
             argmax = sess.run([predict], feed_dict=feed_dict)[0]
 
-            train_batcher.state.argmax = argmax
-            train_batcher.state.targets = t
-
-            if i == 100: break
+            dev_batcher.state.argmax = argmax
+            dev_batcher.state.targets = t
 
 
 def main():
     Logger.GLOBAL_LOG_LEVEL = LogLevel.DEBUG
-    Config.backend = Backends.TENSORFLOW
-    Config.cuda = False
+    Config.backend = Backends.TORCH
+    Config.cuda = True
 
     do_process = False
     if do_process:
@@ -323,16 +319,18 @@ def main():
     dev_batcher = StreamBatcher('snli_example', 'snli_dev', batch_size)
     test_batcher  = StreamBatcher('snli_example', 'snli_test', batch_size)
 
-    train_batcher.subscribe_to_events(AccuracyHook('Train', print_every_x_batches=10))
-    dev_batcher.subscribe_to_events(AccuracyHook('Dev', print_every_x_batches=10))
+    train_batcher.subscribe_to_events(AccuracyHook('Train', print_every_x_batches=100))
+    dev_batcher.subscribe_to_events(AccuracyHook('Dev', print_every_x_batches=1000))
 
     if Config.backend == Backends.TORCH:
+        print('using torch backend')
         model = SNLIClassification(batch_size, vocab, use_cuda=Config.cuda)
         if Config.cuda:
             model.cuda()
 
         train_torch(train_batcher, dev_batcher, test_batcher, model, epochs=5)
     else:
+        print('using tensorflow backend')
         model = TFSNLI(batch_size=128, vocab=vocab)
 
         train_tensorflow(train_batcher, dev_batcher, test_batcher, model)
