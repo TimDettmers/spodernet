@@ -33,7 +33,7 @@ class TFSNLI(object):
         self.batch_size = batch_size
         self.vocab = vocab
 
-    def forward(self, embedding_size=128, output_size=256, scope=None):
+    def forward(self, embedding_size=256, output_size=128, scope=None):
         Q = TensorFlowConfig.inp
         S = TensorFlowConfig.support
         Q_len = TensorFlowConfig.input_length
@@ -68,6 +68,8 @@ class TFSNLI(object):
 
             cell = tf.contrib.rnn.LSTMCell(output_size, state_is_tuple=True,initializer=tf.contrib.layers.xavier_initializer())
 
+            cell = tf.contrib.rnn.DropoutWrapper(cell, output_keep_prob=1.0-Config.dropout)
+
             outputs, states = tf.nn.bidirectional_dynamic_rnn(
                 cell,
                 cell,
@@ -95,14 +97,14 @@ class SNLIClassification(torch.nn.Module):
         self.batch_size = batch_size
         input_dim = 256
         hidden_dim = 128
-        num_directions = 1
+        num_directions = 2
         layers = 1
         self.emb= torch.nn.Embedding(vocab.num_embeddings,
                 input_dim, padding_idx=0)#, scale_grad_by_freq=True, padding_idx=0)
         self.projection_to_labels = torch.nn.Linear(2 * num_directions * hidden_dim, 3)
         self.dual_lstm = DualLSTM(self.batch_size,input_dim,
                 hidden_dim,layers=layers,
-                bidirectional=False,to_cuda=use_cuda )
+                bidirectional=True,to_cuda=use_cuda )
         #self.init_weights()
 
         #print(i.size(1), input_dim)
@@ -215,12 +217,14 @@ def preprocess_SNLI(delete_data=False):
     p3.add_post_processor(StreamToHDF5('snli_test'))
     p3.execute()
 
-def train_torch(train_batcher, dev_batcher, test_batcher, model, epochs=5):
+def train_torch(train_batcher, train_batcher_error, dev_batcher, test_batcher, model, epochs=5):
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     t0 = time.time()
     print('starting training...')
     t0= Timer()
+    print(epochs)
     for epoch in range(epochs):
+        print(epoch)
         model.train()
         t0.tick()
         for i, (inp, inp_len, sup, sup_len, t, idx) in enumerate(train_batcher):
@@ -237,12 +241,19 @@ def train_torch(train_batcher, dev_batcher, test_batcher, model, epochs=5):
             #train_batcher.add_to_hook_histories(t, argmax, loss)
             train_batcher.state.argmax = argmax
             train_batcher.state.targets = t
-            if i == 100: break
             t0.tick()
         t0.tick()
         t0.tock()
 
         model.eval()
+        for i, (inp, inp_len, sup, sup_len, t, idx) in enumerate(train_batcher_error):
+            pred = model.forward_to_output(inp, sup, inp_len, sup_len, t)
+            maxiumum, argmax = torch.topk(pred.data, 1)
+            train_batcher_error.state.argmax = argmax
+            train_batcher_error.state.targets = t
+
+            if i == 1010: break
+
         for inp, inp_len, sup, sup_len, t, idx in dev_batcher:
             pred = model.forward_to_output(inp, sup, inp_len, sup_len, t)
             maxiumum, argmax = torch.topk(pred.data, 1)
@@ -250,7 +261,7 @@ def train_torch(train_batcher, dev_batcher, test_batcher, model, epochs=5):
             dev_batcher.state.targets = t
             #dev_batcher.add_to_hook_histories(t, argmax, loss)
 
-def train_tensorflow(train_batcher, dev_batcher, test_batcher, model, epochs=5):
+def train_tensorflow(train_batcher, train_batcher_error, dev_batcher, test_batcher, model, epochs=5):
     optimizer = tf.train.AdamOptimizer(0.001)
     t0 = time.time()
     print('starting training...')
@@ -259,22 +270,30 @@ def train_tensorflow(train_batcher, dev_batcher, test_batcher, model, epochs=5):
 
     logits, loss, predict = model.forward()
 
+    if Config.L2 != 0.0:
+        loss += tf.add_n([tf.nn.l2_loss(v) for v in tf.trainable_variables()]) * Config.L2
+
+
     min_op = optimizer.minimize(loss)
 
     tf.global_variables_initializer().run(session=sess)
     for epoch in range(epochs):
         for i, feed_dict in enumerate(train_batcher):
-            _, current_loss, argmax = sess.run([min_op, loss, predict], feed_dict=feed_dict)
+            _, argmax = sess.run([min_op, predict], feed_dict=feed_dict)
 
-            print(i)
             train_batcher.state.argmax = argmax
             train_batcher.state.targets = feed_dict[TensorFlowConfig.target]
-            if i == 20: break
+
+        for i, feed_dict in enumerate(train_batcher_error):
+            argmax = sess.run([predict], feed_dict=feed_dict)[0]
+
+            train_batcher_error.state.argmax = argmax
+            train_batcher_error.state.targets = feed_dict[TensorFlowConfig.target]
+
+            if i == 1010: break
 
         for i, feed_dict in enumerate(dev_batcher):
             argmax = sess.run([predict], feed_dict=feed_dict)[0]
-            print(i)
-            if i == 20: break
 
             dev_batcher.state.argmax = argmax
             dev_batcher.state.targets = feed_dict[TensorFlowConfig.target]
@@ -283,7 +302,9 @@ def train_tensorflow(train_batcher, dev_batcher, test_batcher, model, epochs=5):
 def main():
     Logger.GLOBAL_LOG_LEVEL = LogLevel.DEBUG
     Config.backend = Backends.TENSORFLOW
-    Config.cuda = False
+    Config.cuda = True
+    Config.dropout = 0.2
+    Config.l2 = 0.0001
 
     do_process = False
     if do_process:
@@ -296,15 +317,17 @@ def main():
 
     batch_size = 128
     TensorFlowConfig.init_batch_size(batch_size)
-    train_batcher = StreamBatcher('snli_example', 'snli_train', batch_size, randomize=True, loader_threads=4)
+    train_batcher = StreamBatcher('snli_example', 'snli_train', batch_size, randomize=True, loader_threads=2)
+    train_batcher_error = StreamBatcher('snli_example', 'snli_train', batch_size, randomize=True, loader_threads=8, seed=2345)
     dev_batcher = StreamBatcher('snli_example', 'snli_dev', batch_size)
     test_batcher  = StreamBatcher('snli_example', 'snli_test', batch_size)
 
-    train_batcher.subscribe_to_events(AccuracyHook('Train', print_every_x_batches=100))
-    dev_batcher.subscribe_to_events(AccuracyHook('Dev', print_every_x_batches=1000))
-    eta = ETAHook('Train', 10)
-    train_batcher.subscribe_to_events(eta)
-    train_batcher.subscribe_to_start_of_epoch_event(eta)
+    train_batcher.subscribe_to_events(AccuracyHook('Train', print_every_x_batches=1000))
+    train_batcher_error.subscribe_to_events(AccuracyHook('Train', print_every_x_batches=1000))
+    dev_batcher.subscribe_to_events(AccuracyHook('Dev', print_every_x_batches=10000))
+    #eta = ETAHook('Train', 10)
+    #train_batcher.subscribe_to_events(eta)
+    #train_batcher.subscribe_to_start_of_epoch_event(eta)
 
     if Config.backend == Backends.TORCH:
         print('using torch backend')
@@ -312,12 +335,12 @@ def main():
         if Config.cuda:
             model.cuda()
 
-        train_torch(train_batcher, dev_batcher, test_batcher, model, epochs=2)
+        train_torch(train_batcher, train_batcher_error, dev_batcher, test_batcher, model, epochs=100)
     else:
         print('using tensorflow backend')
         model = TFSNLI(batch_size=128, vocab=vocab)
 
-        train_tensorflow(train_batcher, dev_batcher, test_batcher, model)
+        train_tensorflow(train_batcher, train_batcher_error, dev_batcher, test_batcher, model, epochs=100)
 
 
 if __name__ == '__main__':

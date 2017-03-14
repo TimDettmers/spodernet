@@ -101,7 +101,7 @@ class AccuracyHook(AbstractHook):
 
 class LossHook(AbstractHook):
     def __init__(self, name='', print_every_x_batches=1000):
-        super(AccuracyHook, self).__init__(name, 'Loss', print_every_x_batches)
+        super(LossHook, self).__init__(name, 'Loss', print_every_x_batches)
 
     def calculate_metric(self, state):
         return state.loss[0]
