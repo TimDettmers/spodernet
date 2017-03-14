@@ -187,7 +187,7 @@ class DataLoaderSlave(Thread):
 
 
 class StreamBatcher(object):
-    def __init__(self, pipeline_name, name, batch_size, loader_threads=8, randomize=False):
+    def __init__(self, pipeline_name, name, batch_size, loader_threads=8, randomize=False, seed=234666):
         config_path = join(get_data_path(), pipeline_name, name, 'hdf5_config.pkl')
         config = pickle.load(open(config_path))
         self.paths = config['paths']
@@ -223,9 +223,9 @@ class StreamBatcher(object):
         batchidx2paths, batchidx2start_end, shard2batchidx = self.create_batchidx_maps(config['counts'])
 
         for i in range(loader_threads):
-            seed = None
             if randomize:
-                seed = 23432435345 % ((i+1)*17)
+                if seed is None:
+                    seed = 23432435345 % ((i+1)*17)
             self.loaders.append(DataLoaderSlave(self, batchidx2paths, batchidx2start_end, randomize, self.paths, shard2batchidx, seed, self.fractions))
             self.loaders[-1].start()
 
@@ -335,7 +335,7 @@ class StreamBatcher(object):
             self.batch_idx += 1
             self.work.put(self.prefetch_batch_idx)
             self.prefetch_batch_idx +=1
-            if self.prefetch_batch_idx == self.num_batches:
+            if self.prefetch_batch_idx + 1 >= self.num_batches:
                 self.prefetch_batch_idx = 0
 
             return batch_parts
