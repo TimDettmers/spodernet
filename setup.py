@@ -17,7 +17,8 @@ setup(
     license = "MIT",
     keywords = "deep learning NLP",
     url = "http://packages.python.org/spodernet",
-    packages=['spodernet', 'tests', 'examples'],
+    packages=['spodernet'],
+    test_suite="tests",
     long_description=read('README.md'),
     classifiers=[
         "Development Status :: 1 - Alpha",
