@@ -23,8 +23,7 @@ log = Logger('test_pipeline.py.txt')
 
 Logger.GLOBAL_LOG_LEVEL = LogLevel.STATISTICAL
 Logger.LOG_PROPABILITY = 0.1
-
-Config.backend = Backends.NUMPY
+Config.backend = Backends.TEST
 
 def get_test_data_path_dict():
     paths = {}
@@ -651,6 +650,8 @@ def test_non_random_stream_batcher(samples_per_file):
     batch_size = 128
     epochs = 5
     batcher = StreamBatcher(pipeline_folder, data_folder_name, batch_size, loader_threads=8)
+    del batcher.at_batch_prepared_observers[:]
+    print(batcher.at_batch_prepared_observers)
 
     # 4. test data equality
     for epoch in range(epochs):
@@ -732,6 +733,8 @@ def test_random_stream_batcher():
     batch_size = 128
     epochs = 8
     batcher = StreamBatcher(pipeline_folder, data_folder_name, batch_size, loader_threads=8, randomize=True)
+    del batcher.at_batch_prepared_observers[:] # we want to test on raw numpy data
+    print(batcher.at_batch_prepared_observers)
 
     # 4. test data equality
     for epoch in range(epochs):
@@ -812,6 +815,8 @@ def test_bin_streamer():
 
     epochs = 3
     batcher = StreamBatcher(pipeline_folder, data_folder_name, batch_size, loader_threads=8, randomize=True)
+    del batcher.at_batch_prepared_observers[:] # we want to test on raw numpy data
+    print(batcher.at_batch_prepared_observers)
 
     # 4. test data equality
     for epoch in range(epochs):

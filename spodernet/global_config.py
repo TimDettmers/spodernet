@@ -8,6 +8,7 @@ log = Logger('global_config.py.txt')
 class Backends:
     TORCH = 'pytorch'
     TENSORFLOW = 'tensorflow'
+    TEST = 'test'
 
 class TensorFlowConfig:
     inp = None
