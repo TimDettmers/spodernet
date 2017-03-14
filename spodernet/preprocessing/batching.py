@@ -143,6 +143,7 @@ class DataLoaderSlave(Thread):
 
     def publish_at_prepared_batch_event(self, batch_parts):
         for obs in self.stream_batcher.at_batch_prepared_observers:
+            print('slave', obs)
             batch_parts = obs.at_batch_prepared(batch_parts)
         return batch_parts
 
@@ -216,6 +217,8 @@ class StreamBatcher(object):
                 self.subscribe_to_batch_prepared_event(TorchCUDAConverter(torch.cuda.current_device()))
         elif Config.backend == Backends.TENSORFLOW:
             self.subscribe_to_batch_prepared_event(TensorFlowConverter())
+        elif Config.backend == Backends.TEST:
+            pass
         else:
             raise Exception('Backend has unsupported value {0}'.format(Config.backend))
 
