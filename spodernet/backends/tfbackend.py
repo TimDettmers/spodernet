@@ -60,6 +60,8 @@ def train_classification(model, train_batcher, dev_batcher, test_batcher=None, e
             train_batcher.state.argmax = argmax
             train_batcher.state.targets = feed_dict[TensorFlowConfig.target]
 
+            if i == 500: break
+
         for i, feed_dict in enumerate(dev_batcher):
             argmax = sess.run([predict], feed_dict=feed_dict)[0]
 

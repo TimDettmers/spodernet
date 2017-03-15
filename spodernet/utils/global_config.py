@@ -6,6 +6,7 @@ log = Logger('global_config.py.txt')
 class Backends:
     TORCH = 'pytorch'
     TENSORFLOW = 'tensorflow'
+    TEST = 'test'
 
 
 class Config:
@@ -17,7 +18,7 @@ class Config:
     cuda = False
 
     @staticmethod
-    def parse_argv(*argv):
+    def parse_argv(argv):
         file_name = argv[0]
         args = argv[1:]
         assert len(args) % 2 == 0, 'Global parser expects an even number of arguments.'
@@ -31,7 +32,7 @@ class Config:
 
         for i in range(len(names)):
             if names[i] in alias2params:
-                log.debug('Replaced parameters alias {0} with name {1}', name[i], alias2params[name[i]])
+                log.debug('Replaced parameters alias {0} with name {1}', names[i], alias2params[names[i]])
                 names[i] = alias2params[names[i]]
 
         for i in range(len(names)):
@@ -41,6 +42,7 @@ class Config:
             values[i] = params2type[name](values[i])
 
         for name, value in zip(names, values):
+            print(name, value)
             if name[:2] == '--': continue
             params2field[name](value)
             log.debug('Set parameter {0} to {1}', name, value)

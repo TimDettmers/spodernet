@@ -43,7 +43,7 @@ class Embedding(AbstractModel):
         self.scope = scope
         self.num_embeddings = num_embeddings
 
-    def forward(self, *args):
+    def forward(self, feed_dict, *args):
 
         embeddings = tf.get_variable("embeddings", [self.num_embeddings, self.embedding_size],
                                 initializer=tf.random_normal_initializer(0., 1./np.sqrt(self.embedding_size)),
@@ -65,8 +65,7 @@ class PairedBiDirectionalLSTM(AbstractModel):
         if not conditional_encoding:
             raise NotImplementedError("conditional_encoding=False is not implemented yet.")
 
-    def forward(self, *args):
-        print(len(args))
+    def forward(self, feed_dict, *args):
         seqQ, seqS = args
 
         with tf.variable_scope(self.scope or "conditional_reader_seq1") as varscope1:
@@ -87,10 +86,8 @@ class SoftmaxCrossEntropy(AbstractModel):
         super(SoftmaxCrossEntropy, self).__init__()
         self.num_labels = num_labels
 
-    def forward(self, *args):
+    def forward(self, feed_dict, *args):
         outputs_prev_layer = args[0]
-        print(self.num_labels)
-        print(outputs_prev_layer.get_shape())
 
         logits, loss, predict = predictor(outputs_prev_layer, TensorFlowConfig.target, self.num_labels)
 

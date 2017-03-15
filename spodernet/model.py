@@ -9,8 +9,10 @@ class Model(object):
     def add(self, module):
         self.modules.append(module)
 
-    def forward(self):
-        output = []
+    def forward(self, feed_dict=None, *inputs):
+        outputs = inputs
+        if inputs == None:
+            outputs = []
         for module in self.modules:
-            output = module.forward(*output)
-        return output
+            outputs = module.forward(feed_dict, *outputs)
+        return outputs

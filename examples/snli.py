@@ -1,34 +1,83 @@
 '''This models is an example for training a classifier on SNLI'''
 from __future__ import print_function
+from os.path import join
 
-from spodernet.data.snli2spoder import snli2spoder
-from spodernet.preprocessing import spoder2hdf5
-from spodernet.util import load_hdf_file, load_hdf5_paths
+import nltk
+import numpy as np
+import os
+import urllib
+import zipfile
+import simplejson as json
+import sys
+
 from spodernet.hooks import AccuracyHook, LossHook, ETAHook
-from spodernet.models import DualLSTM
 from spodernet.preprocessing.pipeline import Pipeline
 from spodernet.preprocessing.processors import AddToVocab, CreateBinsByNestedLength, SaveLengthsToState, ConvertTokenToIdx, StreamToHDF5, Tokenizer, NaiveNCharTokenizer
 from spodernet.preprocessing.batching import StreamBatcher
-from spodernet.logger import Logger, LogLevel
-from spodernet.util import Timer
-from spodernet.global_config import Config, Backends
-from spodernet.backends.tfbackend import TensorFlowConfig
+from spodernet.utils.logger import Logger, LogLevel
+from spodernet.utils.global_config import Config, Backends
 from spodernet.model import Model
 
 
-import nltk
-import torch
-import numpy as np
-from torch.autograd import Variable
-import torch.nn.functional as F
-from scipy.stats.mstats import normaltest
-#import torch.nn.utils.rnn as rnn_utils
+Config.parse_argv(sys.argv)
+
 np.set_printoptions(suppress=True)
-import time
+
+def download_snli():
+    '''Creates data and snli paths and downloads SNLI in the home dir'''
+    home = os.environ['HOME']
+    data_dir = join(home, '.data')
+    snli_dir = join(data_dir, 'snli')
+    snli_url = 'http://nlp.stanford.edu/projects/snli/snli_1.0.zip'
+
+    if not os.path.exists(data_dir):
+        os.mkdir(data_dir)
+
+    if not os.path.exists(snli_dir):
+        os.mkdir(snli_dir)
+
+    if not os.path.exists(join(data_dir, 'snli_1.0.zip')):
+        print('Downloading SNLI...')
+        snlidownload = urllib.URLopener()
+        snlidownload.retrieve(snli_url, join(data_dir, "snli_1.0.zip"))
+
+    print('Opening zip file...')
+    archive = zipfile.ZipFile(join(data_dir, 'snli_1.0.zip'), 'r')
+
+    return archive, snli_dir
+
+
+def snli2json():
+    '''Preprocesses SNLI data and returns to spoder files'''
+    files = ['snli_1.0_train.jsonl', 'snli_1.0_dev.jsonl',
+             'snli_1.0_test.jsonl']
+
+    archive, snli_dir = download_snli()
+
+    new_files = ['train.data', 'dev.data', 'test.data']
+    names = ['train', 'dev', 'test']
+
+    if not os.path.exists(join(snli_dir, new_files[0])):
+        for name, new_name in zip(files, new_files):
+            print('Writing {0}...'.format(new_name))
+            snli_file = archive.open(join('snli_1.0', name), 'r')
+            with open(join(snli_dir, new_name), 'wb') as datafile:
+                for line in snli_file:
+                    data = json.loads((line))
+                    if data['gold_label'] == '-':
+                        continue
+
+                    premise = data['sentence1']
+                    hypothesis = data['sentence2']
+                    target = data['gold_label']
+                    datafile.write(
+                        json.dumps([premise, hypothesis, target]) + '\n')
+
+    return [names, [join(snli_dir, new_name) for new_name in new_files]]
 
 def preprocess_SNLI(delete_data=False):
     # load data
-    names, file_paths = snli2spoder()
+    names, file_paths = snli2json()
     train_path, dev_path, test_path = file_paths
     tokenizer = nltk.tokenize.WordPunctTokenizer()
 
@@ -84,57 +133,17 @@ def preprocess_SNLI(delete_data=False):
     p3.add_post_processor(StreamToHDF5('snli_test'))
     p3.execute()
 
-def train_torch(train_batcher, train_batcher_error, dev_batcher, test_batcher, model, epochs=5):
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-    t0 = time.time()
-    print('starting training...')
-    t0= Timer()
-    print(epochs)
-    for epoch in range(epochs):
-        print(epoch)
-        model.train()
-        t0.tick()
-        for i, (inp, inp_len, sup, sup_len, t, idx) in enumerate(train_batcher):
-            t0.tick()
-
-            optimizer.zero_grad()
-            pred = model.forward_to_output(inp, sup, inp_len, sup_len, t)
-            #print(pred)
-            loss = F.nll_loss(pred, t)
-            #print(loss)
-            loss.backward()
-            optimizer.step()
-            maxiumum, argmax = torch.topk(pred.data, 1)
-            #train_batcher.add_to_hook_histories(t, argmax, loss)
-            train_batcher.state.argmax = argmax
-            train_batcher.state.targets = t
-            t0.tick()
-        t0.tick()
-        t0.tock()
-
-        model.eval()
-        for i, (inp, inp_len, sup, sup_len, t, idx) in enumerate(train_batcher_error):
-            pred = model.forward_to_output(inp, sup, inp_len, sup_len, t)
-            maxiumum, argmax = torch.topk(pred.data, 1)
-            train_batcher_error.state.argmax = argmax
-            train_batcher_error.state.targets = t
-
-            if i == 1010: break
-
-        for inp, inp_len, sup, sup_len, t, idx in dev_batcher:
-            pred = model.forward_to_output(inp, sup, inp_len, sup_len, t)
-            maxiumum, argmax = torch.topk(pred.data, 1)
-            dev_batcher.state.argmax = argmax
-            dev_batcher.state.targets = t
-            #dev_batcher.add_to_hook_histories(t, argmax, loss)
 
 
 def main():
     Logger.GLOBAL_LOG_LEVEL = LogLevel.DEBUG
-    Config.backend = Backends.TENSORFLOW
+    #Config.backend = Backends.TENSORFLOW
+    Config.backend = Backends.TORCH
     Config.cuda = True
     Config.dropout = 0.2
-    Config.l2 = 0.0001
+    print(Config.L2)
+    Config.L2 = 0.0001
+    print(Config.L2)
 
     do_process = False
     if do_process:
@@ -146,20 +155,30 @@ def main():
     vocab.load_from_disk()
 
     batch_size = 128
-    TensorFlowConfig.init_batch_size(batch_size)
-    train_batcher = StreamBatcher('snli_example', 'snli_train', batch_size, randomize=True, loader_threads=2)
+    if Config.backend == Backends.TENSORFLOW:
+        from spodernet.backends.tfbackend import TensorFlowConfig
+        TensorFlowConfig.init_batch_size(batch_size)
+    train_batcher = StreamBatcher('snli_example', 'snli_train', batch_size, randomize=True, loader_threads=8)
     train_batcher_error = StreamBatcher('snli_example', 'snli_train', batch_size, randomize=True, loader_threads=8, seed=2345)
     dev_batcher = StreamBatcher('snli_example', 'snli_dev', batch_size)
     test_batcher  = StreamBatcher('snli_example', 'snli_test', batch_size)
 
-    train_batcher.subscribe_to_events(AccuracyHook('Train', print_every_x_batches=10))
+    train_batcher.subscribe_to_events(AccuracyHook('Train', print_every_x_batches=100))
     dev_batcher.subscribe_to_events(AccuracyHook('Dev', print_every_x_batches=10000))
 
     if Config.backend == Backends.TORCH:
         print('using torch backend')
-        model = SNLIClassification(batch_size, vocab, use_cuda=Config.cuda)
-        if Config.cuda:
-            model.cuda()
+        from spodernet.backends.torchbackend import train_torch
+        from spodernet.backends.torchmodels import Embedding, PairedBiDirectionalLSTM, SoftmaxCrossEntropy, VariableLengthOutputSelection
+
+        Config.cuda = True
+        setattr(Config, 'cuda', True)
+
+        model = Model()
+        model.add(Embedding(embedding_size=256, num_embeddings=vocab.num_embeddings))
+        model.add(PairedBiDirectionalLSTM(batch_size=128, input_dim=256, hidden_dim=128))
+        model.add(VariableLengthOutputSelection())
+        model.add(SoftmaxCrossEntropy(128, num_labels=3))
 
         train_torch(train_batcher, train_batcher_error, dev_batcher, test_batcher, model, epochs=100)
     else:

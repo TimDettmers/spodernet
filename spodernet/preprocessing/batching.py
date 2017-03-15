@@ -8,12 +8,12 @@ import numpy as np
 import cPickle as pickle
 import Queue
 
-from spodernet.util import get_data_path, load_hdf_file, Timer
-from spodernet.logger import Logger
-from spodernet.global_config import Config, Backends
+from spodernet.utils.util import get_data_path, load_hdf_file, Timer
+from spodernet.utils.global_config import Config, Backends
 from spodernet.hooks import ETAHook
-from spodernet.observables import IAtIterEndObservable, IAtEpochEndObservable, IAtEpochStartObservable, IAtBatchPreparedObservable
+from spodernet.interfaces import IAtIterEndObservable, IAtEpochEndObservable, IAtEpochStartObservable, IAtBatchPreparedObservable
 
+from spodernet.utils.logger import Logger
 log = Logger('batching.py.txt')
 
 
@@ -169,11 +169,12 @@ class StreamBatcher(object):
         self.current_epoch = 0
         self.timer = Timer()
         if Config.backend == Backends.TORCH:
-            from spodernet.backends.torchbackend import TorchConverter, TorchCUDAConverter
+            from spodernet.backends.torchbackend import TorchConverter, TorchCUDAConverter, TorchDictConverter
             self.subscribe_to_batch_prepared_event(TorchConverter())
             if Config.cuda:
                 import torch
                 self.subscribe_to_batch_prepared_event(TorchCUDAConverter(torch.cuda.current_device()))
+            self.subscribe_to_batch_prepared_event(TorchDictConverter())
         elif Config.backend == Backends.TENSORFLOW:
             from spodernet.backends.tfbackend import TensorFlowConverter
             self.subscribe_to_batch_prepared_event(TensorFlowConverter())

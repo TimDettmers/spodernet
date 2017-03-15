@@ -15,10 +15,10 @@ from spodernet.preprocessing.processors import Tokenizer, SaveStateToList, AddTo
 from spodernet.preprocessing.processors import StreamToHDF5, CreateBinsByNestedLength
 from spodernet.preprocessing.vocab import Vocab
 from spodernet.preprocessing.batching import StreamBatcher
-from spodernet.util import get_data_path, load_hdf_file
-from spodernet.global_config import Config, Backends
+from spodernet.utils.util import get_data_path, load_hdf_file
+from spodernet.utils.global_config import Config, Backends
 
-from spodernet.logger import Logger, LogLevel
+from spodernet.utils.logger import Logger, LogLevel
 log = Logger('test_pipeline.py.txt')
 
 Logger.GLOBAL_LOG_LEVEL = LogLevel.STATISTICAL
