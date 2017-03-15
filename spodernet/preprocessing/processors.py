@@ -4,9 +4,9 @@ import numpy as np
 import cPickle as pickle
 import os
 
-from spodernet.util import get_data_path, write_to_hdf, make_dirs_if_not_exists, load_hdf_file
+from spodernet.utils.util import get_data_path, write_to_hdf, make_dirs_if_not_exists, load_hdf_file
 
-from spodernet.logger import Logger
+from spodernet.utils.logger import Logger
 log = Logger('processors.py.txt')
 
 class AbstractProcessor(object):
@@ -248,9 +248,6 @@ class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
             new_X = []
             l = len(X[0])
             for i, list_item in enumerate(X):
-                print(type(list_item))
-                print(list_item)
-                print(i)
                 assert l == len(list_item)
             X = np.array(new_X, dtype=np.int32)
             log.debug("{0}", X)
