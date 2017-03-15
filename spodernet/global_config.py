@@ -1,7 +1,5 @@
 from collections import namedtuple
 
-import tensorflow as tf
-
 from spodernet.logger import Logger
 log = Logger('global_config.py.txt')
 
@@ -9,24 +7,6 @@ class Backends:
     TORCH = 'pytorch'
     TENSORFLOW = 'tensorflow'
     TEST = 'test'
-
-class TensorFlowConfig:
-    inp = None
-    support = None
-    input_length = None
-    support_length = None
-    target = None
-    index = None
-
-    @staticmethod
-    def init_batch_size(batch_size):
-        TensorFlowConfig.inp = tf.placeholder(tf.int64, [batch_size, None])
-        TensorFlowConfig.support = tf.placeholder(tf.int64, [batch_size, None])
-        TensorFlowConfig.input_length = tf.placeholder(tf.int64, [batch_size,])
-        TensorFlowConfig.support_length = tf.placeholder(tf.int64, [batch_size,])
-        TensorFlowConfig.target = tf.placeholder(tf.int64, [batch_size])
-        TensorFlowConfig.index = tf.placeholder(tf.int64, [batch_size])
-
 
 class Config:
     dropout = 0.0

@@ -1,6 +1,3 @@
-from torch.autograd import Variable
-
-import torch
 import numpy as np
 import scipy.stats
 import datetime
@@ -26,19 +23,17 @@ class AbstractHook(IAtIterEndObservable, IAtEpochEndObservable):
         self.n = 0
         self.mean = 0
         self.M2 = 0
+        self.load_backend_specific_functions()
+
+    def load_backend_specific_functions(self):
+        if Config.backend == Backends.TORCH:
+            from spodernet.backends.torchbackend import convert_state
+            self.convert_state = convert_state
+        else:
+            self.convert_state = lambda x: x
 
     def calculate_metric(self, state):
         raise NotImplementedError('Classes that inherit from abstract hook need to implement the calcualte metric method.')
-
-    def convert_state(self, state):
-        if isinstance(state.targets, Variable):
-            state.targets = state.targets.data
-        if isinstance(state.argmax, Variable):
-            state.argmax = state.argmax.data
-        if isinstance(state.pred, Variable):
-            state.pred = state.pred.data
-
-        return state
 
     def at_end_of_iter_event(self, state):
         state = self.convert_state(state)

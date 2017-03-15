@@ -1,9 +1,7 @@
 from os.path import join
 from threading import Thread, Event
 from collections import namedtuple
-from torch.autograd import Variable
 
-import torch
 import time
 import datetime
 import numpy as np
@@ -12,52 +10,12 @@ import Queue
 
 from spodernet.util import get_data_path, load_hdf_file, Timer
 from spodernet.logger import Logger
-from spodernet.global_config import Config, Backends, TensorFlowConfig
+from spodernet.global_config import Config, Backends
 from spodernet.hooks import ETAHook
 from spodernet.observables import IAtIterEndObservable, IAtEpochEndObservable, IAtEpochStartObservable, IAtBatchPreparedObservable
 
 log = Logger('batching.py.txt')
 
-
-
-class TorchConverter(IAtBatchPreparedObservable):
-    def at_batch_prepared(self, batch_parts):
-        inp, inp_len, sup, sup_len, t, idx = batch_parts
-        inp = Variable(torch.LongTensor(np.int64(inp)))
-        inp_len = Variable(torch.IntTensor(np.int64(inp_len)))
-        sup = Variable(torch.LongTensor(np.int64(sup)))
-        sup_len = Variable(torch.IntTensor(np.int64(sup_len)))
-        t = Variable(torch.LongTensor(np.int64(t)))
-        return [inp, inp_len, sup, sup_len, t, idx]
-
-class TorchCUDAConverter(IAtBatchPreparedObservable):
-    def __init__(self, device_id):
-        self.device_id = device_id
-
-    def at_batch_prepared(self, batch_parts):
-        inp, inp_len, sup, sup_len, t, idx = batch_parts
-        inp = inp.cuda(self.device_id)
-        inp_len = inp_len.cuda(self.device_id)
-        sup = sup.cuda(self.device_id)
-        sup_len = sup_len.cuda(self.device_id)
-        t = t.cuda(self.device_id)
-        idx = idx
-        return [inp, inp_len, sup, sup_len, t, idx]
-
-class TensorFlowConverter(IAtBatchPreparedObservable):
-
-    def at_batch_prepared(self, batch_parts):
-        inp, inp_len, sup, sup_len, t, idx = batch_parts
-        if TensorFlowConfig.inp == None:
-            log.error('You need to initialize the batch size via TensorflowConfig.init_batch_size(batchsize)!')
-        feed_dict = {}
-        feed_dict[TensorFlowConfig.inp] = inp
-        feed_dict[TensorFlowConfig.support] = sup
-        feed_dict[TensorFlowConfig.input_length] = inp_len
-        feed_dict[TensorFlowConfig.support_length] = sup_len
-        feed_dict[TensorFlowConfig.target] = t
-        feed_dict[TensorFlowConfig.index] = idx
-        return feed_dict
 
 class BatcherState(object):
     def __init__(self):
@@ -143,7 +101,6 @@ class DataLoaderSlave(Thread):
 
     def publish_at_prepared_batch_event(self, batch_parts):
         for obs in self.stream_batcher.at_batch_prepared_observers:
-            print('slave', obs)
             batch_parts = obs.at_batch_prepared(batch_parts)
         return batch_parts
 
@@ -212,10 +169,13 @@ class StreamBatcher(object):
         self.current_epoch = 0
         self.timer = Timer()
         if Config.backend == Backends.TORCH:
+            from spodernet.backends.torchbackend import TorchConverter, TorchCUDAConverter
             self.subscribe_to_batch_prepared_event(TorchConverter())
             if Config.cuda:
+                import torch
                 self.subscribe_to_batch_prepared_event(TorchCUDAConverter(torch.cuda.current_device()))
         elif Config.backend == Backends.TENSORFLOW:
+            from spodernet.backends.tfbackend import TensorFlowConverter
             self.subscribe_to_batch_prepared_event(TensorFlowConverter())
         elif Config.backend == Backends.TEST:
             pass
