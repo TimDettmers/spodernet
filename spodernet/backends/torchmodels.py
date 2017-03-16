@@ -17,7 +17,7 @@ class TorchEmbedding(torch.nn.Module, AbstractModel):
     def forward(self, str2var, *args):
         self.expected_str2var_keys_oneof(str2var, ['input', 'support'])
         self.expected_args('None', 'None')
-        self.generated_outputs('sequence over inputs, sequence over support', 'both sequences have shape = [batch, timesteps, embedding dim]')
+        self.generated_outputs('input idx, support idx', 'both sequences have shape = [batch, timesteps, embedding dim]')
 
         embedded_results = []
         if 'input' in str2var:
@@ -69,8 +69,8 @@ class TorchPairedBiDirectionalLSTM(torch.nn.Module, AbstractModel):
 
     def forward(self, str2var, *args):
         self.expected_str2var_keys(str2var, [])
-        self.expected_args('input embedded sequence, support embedded sequence', 'both of size [batch, time steps, embedding dim]')
-        self.generated_outputs('LSTM output sequence inputs, LSTM output sequence support', 'both of size [batch, time steps, 2x hidden dim]')
+        self.expected_args('embedded input seq, embedded seq support', 'both of size [batch, time steps, embedding dim]')
+        self.generated_outputs('LSTM output seq inputs, LSTM output seq support', 'both of size [batch, time steps, 2x hidden dim]')
         seq1, seq2 = args
         if self.conditional_encoding:
             self.h01.data.zero_()
@@ -128,7 +128,7 @@ class TorchSoftmaxCrossEntropy(torch.nn.Module, AbstractModel):
 
     def forward(self, str2var, *args):
         self.expected_str2var_keys(str2var, ['target'])
-        self.expected_args('outputs of the previous layer', 'dimension: [batch, any]')
+        self.expected_args('some inputs', 'dimension: [batch, any]')
         self.generated_outputs('logits, loss, argmax', 'dimensions: logits = [batch, labels], loss = 1x1, argmax = [batch, 1]')
 
         outputs_prev_layer = args[0]

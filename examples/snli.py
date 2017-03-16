@@ -137,9 +137,9 @@ def preprocess_SNLI(delete_data=False):
 
 
 def main():
-    Logger.GLOBAL_LOG_LEVEL = LogLevel.DEBUG
-    #Config.backend = Backends.TENSORFLOW
-    Config.backend = Backends.TORCH
+    Logger.GLOBAL_LOG_LEVEL = LogLevel.INFO
+    Config.backend = Backends.TENSORFLOW
+    #Config.backend = Backends.TORCH
     Config.cuda = False
     Config.dropout = 0.2
     print(Config.L2)
