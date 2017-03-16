@@ -15,7 +15,3 @@ class IAtEpochEndObservable(object):
 class IAtBatchPreparedObservable(object):
     def at_batch_prepared(self, batch_parts):
         raise NotImplementedError('Subclasses of IAtBatchPreparedObservable need to override the at_batch_prepared method')
-
-class AbstractModel(object):
-    def forward(self, feed_dict, *args):
-        raise NotImplementedError("Classes that inherit from AbstractModel need to implement the forward method")

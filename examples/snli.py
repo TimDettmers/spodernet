@@ -16,8 +16,8 @@ from spodernet.preprocessing.processors import AddToVocab, CreateBinsByNestedLen
 from spodernet.preprocessing.batching import StreamBatcher
 from spodernet.utils.logger import Logger, LogLevel
 from spodernet.utils.global_config import Config, Backends
-from spodernet.model import Model
 
+from spodernet.frontend import Model, PairedBiDirectionalLSTM, SoftmaxCrossEntropy, Embedding, Trainer
 
 Config.parse_argv(sys.argv)
 
@@ -109,6 +109,7 @@ def preprocess_SNLI(delete_data=False):
     p2.add_sent_processor(Tokenizer(tokenizer.tokenize), t)
     #p2.add_sent_processor(NaiveNCharTokenizer(3), not_t)
     p2.add_post_processor(SaveLengthsToState())
+    p2.add_post_processor(NGramProcessor(3))
     p2.execute()
 
     p2.clear_processors()
@@ -139,7 +140,7 @@ def main():
     Logger.GLOBAL_LOG_LEVEL = LogLevel.DEBUG
     #Config.backend = Backends.TENSORFLOW
     Config.backend = Backends.TORCH
-    Config.cuda = True
+    Config.cuda = False
     Config.dropout = 0.2
     print(Config.L2)
     Config.L2 = 0.0001
@@ -159,38 +160,23 @@ def main():
         from spodernet.backends.tfbackend import TensorFlowConfig
         TensorFlowConfig.init_batch_size(batch_size)
     train_batcher = StreamBatcher('snli_example', 'snli_train', batch_size, randomize=True, loader_threads=8)
+    #train_batcher.subscribe_to_batch_prepared_event(SomeExpensivePreprocessing())
     train_batcher_error = StreamBatcher('snli_example', 'snli_train', batch_size, randomize=True, loader_threads=8, seed=2345)
     dev_batcher = StreamBatcher('snli_example', 'snli_dev', batch_size)
     test_batcher  = StreamBatcher('snli_example', 'snli_test', batch_size)
 
-    train_batcher.subscribe_to_events(AccuracyHook('Train', print_every_x_batches=100))
-    dev_batcher.subscribe_to_events(AccuracyHook('Dev', print_every_x_batches=10000))
+    train_batcher.subscribe_to_events(AccuracyHook('Train', print_every_x_batches=10))
+    dev_batcher.subscribe_to_events(AccuracyHook('Dev', print_every_x_batches=10))
 
-    if Config.backend == Backends.TORCH:
-        print('using torch backend')
-        from spodernet.backends.torchbackend import train_torch
-        from spodernet.backends.torchmodels import Embedding, PairedBiDirectionalLSTM, SoftmaxCrossEntropy, VariableLengthOutputSelection
+    model = Model()
+    model.add(Embedding(128, vocab.num_embeddings))
+    model.add(PairedBiDirectionalLSTM(128, hidden_size=256))
+    model.add(SoftmaxCrossEntropy(input_size=256*4, num_labels=3))
 
-        Config.cuda = True
-        setattr(Config, 'cuda', True)
 
-        model = Model()
-        model.add(Embedding(embedding_size=256, num_embeddings=vocab.num_embeddings))
-        model.add(PairedBiDirectionalLSTM(batch_size=128, input_dim=256, hidden_dim=128))
-        model.add(VariableLengthOutputSelection())
-        model.add(SoftmaxCrossEntropy(128, num_labels=3))
-
-        train_torch(train_batcher, train_batcher_error, dev_batcher, test_batcher, model, epochs=100)
-    else:
-        print('using tensorflow backend')
-        from spodernet.backends.tfbackend import train_classification
-        from spodernet.backends.tfmodels import Embedding, PairedBiDirectionalLSTM, SoftmaxCrossEntropy
-        model = Model()
-        model.add(Embedding(embedding_size=256, num_embeddings=vocab.num_embeddings))
-        model.add(PairedBiDirectionalLSTM(hidden_size=128))
-        model.add(SoftmaxCrossEntropy(num_labels=3))
-
-        train_classification(model, train_batcher, dev_batcher, test_batcher, epochs=100)
+    t = Trainer(model)
+    t.train(train_batcher, iterations=50)
+    t.evaluate(dev_batcher, iterations=20)
 
 
 if __name__ == '__main__':

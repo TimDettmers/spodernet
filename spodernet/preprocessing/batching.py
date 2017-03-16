@@ -168,6 +168,7 @@ class StreamBatcher(object):
         self.current_iter = 0
         self.current_epoch = 0
         self.timer = Timer()
+        self.loader_threads = loader_threads
         if Config.backend == Backends.TORCH:
             from spodernet.backends.torchbackend import TorchConverter, TorchCUDAConverter, TorchDictConverter
             self.subscribe_to_batch_prepared_event(TorchConverter())

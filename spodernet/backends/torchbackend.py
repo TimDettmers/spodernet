@@ -42,15 +42,15 @@ class TorchDictConverter(IAtBatchPreparedObservable):
     def at_batch_prepared(self, batch_parts):
         inp, inp_len, sup, sup_len, t, idx = batch_parts
 
-        feed_dict = {}
-        feed_dict['input'] = inp
-        feed_dict['input_length'] = inp_len
-        feed_dict['support'] = sup
-        feed_dict['support_length'] = sup_len
-        feed_dict['target'] = t
-        feed_dict['index'] = idx
+        str2var = {}
+        str2var['input'] = inp
+        str2var['input_length'] = inp_len
+        str2var['support'] = sup
+        str2var['support_length'] = sup_len
+        str2var['target'] = t
+        str2var['index'] = idx
 
-        return feed_dict
+        return str2var
 
 
 ######################################
@@ -69,42 +69,53 @@ def convert_state(state):
 
     return state
 
-
-
-def train_torch(train_batcher, train_batcher_error, dev_batcher, test_batcher, model, epochs=5):
-    generators = []
+def get_list_of_torch_modules(model):
+    modules = []
     for module in model.modules:
+        if hasattr(module, 'modules'):
+            for module2 in module.modules:
+                modules.append(module2)
+        else:
+            modules.append(module)
+    return modules
+
+
+
+def train_model(model, batcher, epochs=1, iterations=None):
+    modules = get_list_of_torch_modules(model)
+    generators = []
+    for module in modules:
         if Config.cuda:
             module.cuda()
         generators.append(module.parameters())
 
-
     parameters = chain.from_iterable(generators)
     optimizer = torch.optim.Adam(parameters, lr=0.001)
-    print('starting training...')
-    t0= Timer()
-    for epoch in range(epochs):
-        for module in model.modules:
-            module.train()
-        t0.tick()
-        for i, feed_dict in enumerate(train_batcher):
-            t0.tick()
+    for module in modules:
+        module.train()
 
+    for epoch in range(epochs):
+        for i, str2var in enumerate(batcher):
             optimizer.zero_grad()
-            logits, loss, argmax = model.forward(feed_dict)
+            logits, loss, argmax = model.forward(str2var)
             loss.backward()
             optimizer.step()
-            train_batcher.state.argmax = argmax
-            train_batcher.state.targets = feed_dict['target']
-            if i == 500: break
-            t0.tick()
-        t0.tick()
-        t0.tock()
+            batcher.state.argmax = argmax
+            batcher.state.targets = str2var['target']
 
-        for module in model.modules:
-            module.eval()
+            if iterations > 0:
+                if i == iterations: break
 
-        for feed_dict in dev_batcher:
-            logits, loss, argmax = model.forward(feed_dict)
-            dev_batcher.state.argmax = argmax
-            dev_batcher.state.targets = feed_dict['target']
+
+def eval_model(model, batcher, iterations=None):
+    modules = get_list_of_torch_modules(model)
+    for module in modules:
+        module.eval()
+
+    for i, str2var in enumerate(batcher):
+        logits, loss, argmax = model.forward(str2var)
+        batcher.state.argmax = argmax
+        batcher.state.targets = str2var['target']
+
+        if iterations > 0:
+            if i == iterations: break
