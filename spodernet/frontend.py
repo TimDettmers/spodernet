@@ -46,6 +46,12 @@ class Trainer(object):
 
 class AbstractModel(object):
 
+    def __init__(self):
+        super(AbstractModel, self).__init__()
+        self.input_str_args = None
+        self.output_str_args = None
+        self.used_keys = None
+
     def forward(self, str2var, *args):
         raise NotImplementedError("Classes that inherit from AbstractModel need to implement the forward method.")
 
@@ -54,11 +60,13 @@ class AbstractModel(object):
         raise NotImplementedError("Classes that inherit from AbstractModel need to overrite the modules property.")
 
     def expected_str2var_keys(self, str2var, keys):
+        self.used_keys = keys
         for key in keys:
             if key not in str2var:
                 log.error('Variable with name {0} expected, but not found in str2variable dict with keys {1}'.format(key, str2var.keys()))
 
     def expected_str2var_keys_oneof(self, str2var, keys):
+        self.used_keys = keys
         one_exists = False
         for key in keys:
             if key in str2var:
@@ -66,14 +74,20 @@ class AbstractModel(object):
         if not one_exists:
             log.error('At least one of these variable was expected: {0}. But str2var only has these variables: {1}.', keys, str2var.keys())
 
-
     def expected_args(self, str_arg_names, str_arg_description):
-        log.info_once('Expected args {0}'.format(str_arg_names))
+        log.debug_once('Expected args {0}'.format(str_arg_names))
         log.debug_once('Info for the expected arguments: {0}'.format(str_arg_description))
+        self.input_str_args = str_arg_names
 
     def generated_outputs(self, str_output_names, str_output_description):
-        log.info_once('Generated outputs: {0}'.format(str_output_names))
+        log.debug_once('Generated outputs: {0}'.format(str_output_names))
         log.debug_once('Info for the provided outputs: {0}'.format(str_output_description))
+        self.output_str_args = str_output_names
+        self.used_keys
+        self.input_str_args
+        self.output_str_args
+        message = '{0} + {1} -> {2}'.format(self.used_keys, self.input_str_args, self.output_str_args)
+        log.info_once(message)
 
 
 class Embedding(object):

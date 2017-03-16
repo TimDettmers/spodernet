@@ -46,7 +46,7 @@ class TFEmbedding(AbstractModel):
     def forward(self, str2var, *args):
         self.expected_str2var_keys(str2var, ['input', 'support'])
         self.expected_args('None', 'None')
-        self.generated_outputs('sequence over inputs, sequence over support', 'both sequences have shape = [batch, timesteps, embedding dim]')
+        self.generated_outputs('input idx, support idx', 'both sequences have shape = [batch, timesteps, embedding dim]')
 
         embeddings = tf.get_variable("embeddings", [self.num_embeddings, self.embedding_size],
                                 initializer=tf.random_normal_initializer(0., 1./np.sqrt(self.embedding_size)),
@@ -70,8 +70,8 @@ class TFPairedBiDirectionalLSTM(AbstractModel):
 
     def forward(self, str2var, *args):
         self.expected_str2var_keys(str2var, ['input_length', 'support_length'])
-        self.expected_args('seq input, sequence support', 'dimension of both: [batch, timesteps, embedding dim]')
-        self.generated_outputs('stacked bidirectional outputs of last timestep', 'dim is [batch_size, 2x hidden size]')
+        self.expected_args('seq input, seq support', 'dimension of both: [batch, timesteps, embedding dim]')
+        self.generated_outputs('stacked outputs of last timestep', 'dim is [batch_size, 2x hidden size]')
 
         seqQ, seqS = args
 
@@ -95,7 +95,7 @@ class TFSoftmaxCrossEntropy(AbstractModel):
 
     def forward(self, str2var, *args):
         self.expected_str2var_keys(str2var, ['target'])
-        self.expected_args('outputs of the previous layer', 'dimension: [batch, any]')
+        self.expected_args('some inputs', 'dimension: [batch, any]')
         self.generated_outputs('logits, loss, argmax', 'dimensions: logits = [batch, labels], loss = 1x1, argmax = [batch, 1]')
         outputs_prev_layer = args[0]
 
