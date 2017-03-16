@@ -11,6 +11,9 @@ class TensorFlowConfig:
     support_length = None
     target = None
     index = None
+    sess = None
+
+    graph_targets = {}
 
     @staticmethod
     def init_batch_size(batch_size):
@@ -20,6 +23,12 @@ class TensorFlowConfig:
         TensorFlowConfig.support_length = tf.placeholder(tf.int64, [batch_size,])
         TensorFlowConfig.target = tf.placeholder(tf.int64, [batch_size])
         TensorFlowConfig.index = tf.placeholder(tf.int64, [batch_size])
+
+    @staticmethod
+    def get_session():
+        if TensorFlowConfig.sess is None:
+            TensorFlowConfig.sess = tf.Session()
+        return TensorFlowConfig.sess
 
 
 
@@ -36,36 +45,69 @@ class TensorFlowConverter(IAtBatchPreparedObservable):
         feed_dict[TensorFlowConfig.support_length] = sup_len
         feed_dict[TensorFlowConfig.target] = t
         feed_dict[TensorFlowConfig.index] = idx
-        return feed_dict
 
-def train_classification(model, train_batcher, dev_batcher, test_batcher=None, epochs=5):
+        str2var = {}
+        str2var['input'] = TensorFlowConfig.inp
+        str2var['input_length'] = TensorFlowConfig.input_length
+        str2var['support'] = TensorFlowConfig.support
+        str2var['support_length'] = TensorFlowConfig.support_length
+        str2var['target'] = TensorFlowConfig.target
+        str2var['index'] = TensorFlowConfig.index
+
+        return str2var, feed_dict
+
+def build_str2var_dict():
+    str2var = {}
+    if TensorFlowConfig.inp is not None:
+        str2var['input'] = TensorFlowConfig.inp
+    if TensorFlowConfig.support is not None:
+        str2var['support'] = TensorFlowConfig.support
+    if TensorFlowConfig.target is not None:
+        str2var['target'] = TensorFlowConfig.target
+    if TensorFlowConfig.input_length is not None:
+        str2var['input_length'] = TensorFlowConfig.input_length
+    if TensorFlowConfig.support_length is not None:
+        str2var['support_length'] = TensorFlowConfig.support_length
+    if TensorFlowConfig.index is not None:
+        str2var['index'] = TensorFlowConfig.index
+        return str2var
+
+def train_model(model, batcher, epochs=1, iterations=None):
     optimizer = tf.train.AdamOptimizer(0.001)
-    print('starting training...')
-    t0 = Timer()
-    sess = tf.Session()
 
-    logits, loss, predict = model.forward()
+    sess = TensorFlowConfig.get_session()
+    str2var = build_str2var_dict()
+    logits, loss, argmax = model.forward(str2var)
+    TensorFlowConfig.graph_targets['logits'] = logits
+    TensorFlowConfig.graph_targets['loss'] = loss
+    TensorFlowConfig.graph_targets['argmax'] = argmax
 
     if Config.L2 != 0.0:
         loss += tf.add_n([tf.nn.l2_loss(v) for v in tf.trainable_variables()]) * Config.L2
-
 
     min_op = optimizer.minimize(loss)
 
     tf.global_variables_initializer().run(session=sess)
     for epoch in range(epochs):
-        for i, feed_dict in enumerate(train_batcher):
-            _, argmax = sess.run([min_op, predict], feed_dict=feed_dict)
+        for i, (str2var, feed_dict) in enumerate(batcher):
+            _, argmax_values = sess.run([min_op, argmax], feed_dict=feed_dict)
 
-            train_batcher.state.argmax = argmax
-            train_batcher.state.targets = feed_dict[TensorFlowConfig.target]
+            batcher.state.argmax = argmax_values
+            batcher.state.targets = feed_dict[TensorFlowConfig.target]
 
-            if i == 500: break
+            if iterations > 0:
+                if i == iterations: break
 
-        for i, feed_dict in enumerate(dev_batcher):
-            argmax = sess.run([predict], feed_dict=feed_dict)[0]
+def eval_model(model, batcher, iterations=None):
+    sess = TensorFlowConfig.get_session()
+    argmax = TensorFlowConfig.graph_targets['argmax']
 
-            dev_batcher.state.argmax = argmax
-            dev_batcher.state.targets = feed_dict[TensorFlowConfig.target]
+    for i, (str2var, feed_dict) in enumerate(batcher):
+        argmax_values = sess.run([argmax], feed_dict=feed_dict)[0]
 
+        batcher.state.argmax = argmax_values
+        batcher.state.targets = feed_dict[TensorFlowConfig.target]
+
+        if iterations > 0:
+            if i == iterations: break
 

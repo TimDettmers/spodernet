@@ -20,6 +20,7 @@ class AbstractProcessor(object):
     def process(self, inputs, inp_type):
         raise NotImplementedError('Classes that inherit from AbstractProcessor need to implement the process method')
 
+
 class AbstractLoopLevelTokenProcessor(AbstractProcessor):
     def __init__(self):
         super(AbstractLoopLevelTokenProcessor, self).__init__()

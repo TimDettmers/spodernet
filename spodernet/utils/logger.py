@@ -79,6 +79,7 @@ class Logger:
 
     def error(self, message, *args):
         self._log(message, LogLevel.ERROR, *args)
+        raise Exception(message.format(*args))
 
     def _log_statistical(self, message, p, *args):
         rdm_num = self.rdm.rand()

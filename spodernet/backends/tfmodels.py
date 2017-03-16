@@ -2,7 +2,7 @@ import tensorflow as tf
 from tensorflow import placeholder
 from spodernet.backends.tfbackend import TensorFlowConfig
 from spodernet.utils.global_config import Config
-from spodernet.interfaces import AbstractModel
+from spodernet.frontend import AbstractModel
 import numpy as np
 
 def reader(inputs, lengths, output_size, contexts=(None, None), scope=None):
@@ -34,16 +34,19 @@ def predictor(inputs, targets, target_size):
     return [logits, loss, predict]
 
 
-class Embedding(AbstractModel):
+class TFEmbedding(AbstractModel):
 
     def __init__(self, embedding_size, num_embeddings, scope=None):
-        super(Embedding, self).__init__()
+        super(TFEmbedding, self).__init__()
 
         self.embedding_size = embedding_size
         self.scope = scope
         self.num_embeddings = num_embeddings
 
-    def forward(self, feed_dict, *args):
+    def forward(self, str2var, *args):
+        self.expected_str2var_keys(str2var, ['input', 'support'])
+        self.expected_args('None', 'None')
+        self.generated_outputs('sequence over inputs, sequence over support', 'both sequences have shape = [batch, timesteps, embedding dim]')
 
         embeddings = tf.get_variable("embeddings", [self.num_embeddings, self.embedding_size],
                                 initializer=tf.random_normal_initializer(0., 1./np.sqrt(self.embedding_size)),
@@ -56,16 +59,20 @@ class Embedding(AbstractModel):
 
         return seqQ, seqS
 
-class PairedBiDirectionalLSTM(AbstractModel):
+class TFPairedBiDirectionalLSTM(AbstractModel):
 
     def __init__(self, hidden_size, scope=None, conditional_encoding=True):
-        super(PairedBiDirectionalLSTM, self).__init__()
+        super(TFPairedBiDirectionalLSTM, self).__init__()
         self.hidden_size = hidden_size
         self.scope = scope
         if not conditional_encoding:
             raise NotImplementedError("conditional_encoding=False is not implemented yet.")
 
-    def forward(self, feed_dict, *args):
+    def forward(self, str2var, *args):
+        self.expected_str2var_keys(str2var, ['input_length', 'support_length'])
+        self.expected_args('seq input, sequence support', 'dimension of both: [batch, timesteps, embedding dim]')
+        self.generated_outputs('stacked bidirectional outputs of last timestep', 'dim is [batch_size, 2x hidden size]')
+
         seqQ, seqS = args
 
         with tf.variable_scope(self.scope or "conditional_reader_seq1") as varscope1:
@@ -80,15 +87,18 @@ class PairedBiDirectionalLSTM(AbstractModel):
 
         return [output]
 
-class SoftmaxCrossEntropy(AbstractModel):
+class TFSoftmaxCrossEntropy(AbstractModel):
 
     def __init__(self, num_labels):
-        super(SoftmaxCrossEntropy, self).__init__()
+        super(TFSoftmaxCrossEntropy, self).__init__()
         self.num_labels = num_labels
 
-    def forward(self, feed_dict, *args):
+    def forward(self, str2var, *args):
+        self.expected_str2var_keys(str2var, ['target'])
+        self.expected_args('outputs of the previous layer', 'dimension: [batch, any]')
+        self.generated_outputs('logits, loss, argmax', 'dimensions: logits = [batch, labels], loss = 1x1, argmax = [batch, 1]')
         outputs_prev_layer = args[0]
 
-        logits, loss, predict = predictor(outputs_prev_layer, TensorFlowConfig.target, self.num_labels)
+        logits, loss, argmax = predictor(outputs_prev_layer, TensorFlowConfig.target, self.num_labels)
 
-        return [logits, loss, predict]
+        return [logits, loss, argmax]
