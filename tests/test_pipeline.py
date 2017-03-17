@@ -12,6 +12,7 @@ import cPickle as pickle
 
 from spodernet.preprocessing.pipeline import Pipeline
 from spodernet.preprocessing.processors import Tokenizer, SaveStateToList, AddToVocab, ToLower, ConvertTokenToIdx, SaveLengthsToState
+from spodernet.preprocessing.processors import JsonLoaderProcessors
 from spodernet.preprocessing.processors import StreamToHDF5, CreateBinsByNestedLength
 from spodernet.preprocessing.vocab import Vocab
 from spodernet.preprocessing.batching import StreamBatcher
@@ -39,6 +40,7 @@ def test_tokenization():
     # 1. setup pipeline
     p = Pipeline('test_pipeline')
     p.add_path(get_test_data_path_dict()['snli'])
+    p.add_line_processor(JsonLoaderProcessors())
     p.add_sent_processor(Tokenizer(tokenizer.tokenize))
     p.add_sent_processor(SaveStateToList('tokens'))
     state = p.execute()
@@ -90,6 +92,7 @@ def test_vocab():
     # 1. setup pipeline
     p = Pipeline('test_pipeline')
     p.add_path(get_test_data_path_dict()['snli'])
+    p.add_line_processor(JsonLoaderProcessors())
     p.add_sent_processor(Tokenizer(tokenizer.tokenize))
     p.add_token_processor(AddToVocab())
     state = p.execute()
@@ -155,6 +158,7 @@ def test_to_lower_sent():
     # 1. setup pipeline
     p = Pipeline('test_pipeline')
     p.add_path(path)
+    p.add_line_processor(JsonLoaderProcessors())
     p.add_sent_processor(ToLower())
     p.add_sent_processor(SaveStateToList('sents'))
     state = p.execute()
@@ -176,6 +180,7 @@ def test_to_lower_token():
     # 1. setup pipeline
     p = Pipeline('test_pipeline')
     p.add_path(path)
+    p.add_line_processor(JsonLoaderProcessors())
     p.add_sent_processor(Tokenizer(tokenizer.tokenize))
     p.add_token_processor(ToLower())
     p.add_token_processor(SaveStateToList('tokens'))
@@ -196,6 +201,7 @@ def test_save_to_list_text():
     # 1. setup pipeline
     p = Pipeline('test_pipeline')
     p.add_path(path)
+    p.add_line_processor(JsonLoaderProcessors())
     p.add_text_processor(SaveStateToList('text'))
     state = p.execute()
 
@@ -216,6 +222,7 @@ def test_save_to_list_sentences():
     # 1. setup pipeline
     p = Pipeline('test_pipeline')
     p.add_path(path)
+    p.add_line_processor(JsonLoaderProcessors())
     p.add_text_processor(Tokenizer(sent_tokenizer.tokenize))
     p.add_sent_processor(SaveStateToList('sents'))
     state = p.execute()
@@ -252,6 +259,7 @@ def test_save_to_list_post_process():
     # 1. setup pipeline
     p = Pipeline('test_pipeline')
     p.add_path(path)
+    p.add_line_processor(JsonLoaderProcessors())
     p.add_text_processor(Tokenizer(sent_tokenizer.tokenize))
     p.add_sent_processor(Tokenizer(tokenizer.tokenize))
     p.add_post_processor(SaveStateToList('samples'))
@@ -301,6 +309,7 @@ def test_convert_token_to_idx_no_sentences():
     # 1. setup pipeline
     p = Pipeline('test_pipeline')
     p.add_path(get_test_data_path_dict()['snli'])
+    p.add_line_processor(JsonLoaderProcessors())
     p.add_sent_processor(Tokenizer(tokenizer.tokenize))
     p.add_token_processor(AddToVocab())
     p.add_post_processor(ConvertTokenToIdx())
@@ -366,6 +375,7 @@ def test_save_lengths():
     # 1. setup pipeline
     p = Pipeline('test_pipeline')
     p.add_path(get_test_data_path_dict()['snli'])
+    p.add_line_processor(JsonLoaderProcessors())
     p.add_sent_processor(Tokenizer(tokenizer.tokenize))
     p.add_post_processor(SaveLengthsToState())
     state = p.execute()
@@ -406,6 +416,7 @@ def test_stream_to_hdf5():
     # 1. Setup pipeline to save lengths and generate vocabulary
     p = Pipeline(pipeline_folder)
     p.add_path(get_test_data_path_dict()['snli'])
+    p.add_line_processor(JsonLoaderProcessors())
     p.add_sent_processor(Tokenizer(tokenizer.tokenize))
     p.add_post_processor(SaveLengthsToState())
     p.execute()
@@ -511,6 +522,7 @@ def test_bin_search():
     # 1. Setup pipeline to save lengths and generate vocabulary
     p = Pipeline('test_pipeline')
     p.add_path(get_test_data_path_dict()['snli3k'])
+    p.add_line_processor(JsonLoaderProcessors())
     p.add_sent_processor(Tokenizer(tokenizer.tokenize))
     p.add_post_processor(SaveLengthsToState())
     p.execute()
@@ -593,6 +605,7 @@ def test_non_random_stream_batcher(samples_per_file):
     # 1. Setup pipeline to save lengths and generate vocabulary
     p = Pipeline(pipeline_folder)
     p.add_path(get_test_data_path_dict()['snli3k'])
+    p.add_line_processor(JsonLoaderProcessors())
     p.add_sent_processor(Tokenizer(tokenizer.tokenize))
     p.add_post_processor(SaveLengthsToState())
     p.execute()
@@ -684,6 +697,7 @@ def test_random_stream_batcher():
     # 1. Setup pipeline to save lengths and generate vocabulary
     p = Pipeline(pipeline_folder)
     p.add_path(get_test_data_path_dict()['snli3k'])
+    p.add_line_processor(JsonLoaderProcessors())
     p.add_sent_processor(Tokenizer(tokenizer.tokenize))
     p.add_post_processor(SaveLengthsToState())
     p.execute()
@@ -767,6 +781,7 @@ def test_bin_streamer():
     # 1. Setup pipeline to save lengths and generate vocabulary
     p = Pipeline(pipeline_folder)
     p.add_path(get_test_data_path_dict()['snli3k'])
+    p.add_line_processor(JsonLoaderProcessors())
     p.add_sent_processor(Tokenizer(tokenizer.tokenize))
     p.add_post_processor(SaveLengthsToState())
     p.execute()

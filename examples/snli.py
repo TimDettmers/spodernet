@@ -7,15 +7,16 @@ import numpy as np
 import os
 import urllib
 import zipfile
-import simplejson as json
 import sys
 
 from spodernet.hooks import AccuracyHook, LossHook, ETAHook
 from spodernet.preprocessing.pipeline import Pipeline
 from spodernet.preprocessing.processors import AddToVocab, CreateBinsByNestedLength, SaveLengthsToState, ConvertTokenToIdx, StreamToHDF5, Tokenizer, NaiveNCharTokenizer
+from spodernet.preprocessing.processors import JsonLoaderProcessors, DictKey2ListMapper, RemoveLineOnJsonValueCondition
 from spodernet.preprocessing.batching import StreamBatcher
 from spodernet.utils.logger import Logger, LogLevel
 from spodernet.utils.global_config import Config, Backends
+from spodernet.utils.util import get_data_path
 
 from spodernet.frontend import Model, PairedBiDirectionalLSTM, SoftmaxCrossEntropy, Embedding, Trainer
 
@@ -60,6 +61,7 @@ def snli2json():
     if not os.path.exists(join(snli_dir, new_files[0])):
         for name, new_name in zip(files, new_files):
             print('Writing {0}...'.format(new_name))
+            archive = zipfile.ZipFile(join(data_dir, 'snli_1.0.zip'), 'r')
             snli_file = archive.open(join('snli_1.0', name), 'r')
             with open(join(snli_dir, new_name), 'wb') as datafile:
                 for line in snli_file:
@@ -77,16 +79,22 @@ def snli2json():
 
 def preprocess_SNLI(delete_data=False):
     # load data
-    names, file_paths = snli2json()
-    train_path, dev_path, test_path = file_paths
+    #names, file_paths = snli2json()
+    #train_path, dev_path, test_path = file_paths
     tokenizer = nltk.tokenize.WordPunctTokenizer()
+
+    zip_path = join(get_data_path(), 'snli_1.0.zip', 'snli_1.0')
+    file_paths = ['snli_1.0_train.jsonl', 'snli_1.0_dev.jsonl', 'snli_1.0_test.jsonl']
 
     not_t = []
     t = ['input', 'support', 'target']
     # tokenize and convert to hdf5
     # 1. Setup pipeline to save lengths and generate vocabulary
     p = Pipeline('snli_example', delete_data)
-    p.add_path(train_path)
+    p.add_path(join(zip_path, file_paths[0]))
+    p.add_line_processor(JsonLoaderProcessors())
+    p.add_line_processor(RemoveLineOnJsonValueCondition('gold_label', lambda label: label == '-'))
+    p.add_line_processor(DictKey2ListMapper(['sentence1', 'sentence2', 'gold_label']))
     p.add_sent_processor(Tokenizer(tokenizer.tokenize), t)
     #p.add_sent_processor(NaiveNCharTokenizer(3), not_t)
     p.add_token_processor(AddToVocab())
@@ -105,11 +113,13 @@ def preprocess_SNLI(delete_data=False):
     # dev and test data
     p2 = Pipeline('snli_example')
     p2.add_vocab(p)
-    p2.add_path(dev_path)
+    p2.add_path(join(zip_path, file_paths[1]))
+    p2.add_line_processor(JsonLoaderProcessors())
+    p2.add_line_processor(RemoveLineOnJsonValueCondition('gold_label', lambda label: label == '-'))
+    p2.add_line_processor(DictKey2ListMapper(['sentence1', 'sentence2', 'gold_label']))
     p2.add_sent_processor(Tokenizer(tokenizer.tokenize), t)
     #p2.add_sent_processor(NaiveNCharTokenizer(3), not_t)
     p2.add_post_processor(SaveLengthsToState())
-    p2.add_post_processor(NGramProcessor(3))
     p2.execute()
 
     p2.clear_processors()
@@ -121,7 +131,10 @@ def preprocess_SNLI(delete_data=False):
 
     p3 = Pipeline('snli_example')
     p3.add_vocab(p)
-    p3.add_path(test_path)
+    p3.add_path(join(zip_path, file_paths[2]))
+    p3.add_line_processor(JsonLoaderProcessors())
+    p3.add_line_processor(RemoveLineOnJsonValueCondition('gold_label', lambda label: label == '-'))
+    p3.add_line_processor(DictKey2ListMapper(['sentence1', 'sentence2', 'gold_label']))
     p3.add_sent_processor(Tokenizer(tokenizer.tokenize), t)
     #p3.add_sent_processor(NaiveNCharTokenizer(3), not_t)
     p3.add_post_processor(SaveLengthsToState())
@@ -138,17 +151,17 @@ def preprocess_SNLI(delete_data=False):
 
 def main():
     Logger.GLOBAL_LOG_LEVEL = LogLevel.INFO
-    Config.backend = Backends.TENSORFLOW
-    #Config.backend = Backends.TORCH
+    #Config.backend = Backends.TENSORFLOW
+    Config.backend = Backends.TORCH
     Config.cuda = False
     Config.dropout = 0.2
     print(Config.L2)
     Config.L2 = 0.0001
     print(Config.L2)
 
-    do_process = False
+    do_process = True
     if do_process:
-        preprocess_SNLI(delete_data=False)
+        preprocess_SNLI(delete_data=True)
 
 
     p = Pipeline('snli_example')
