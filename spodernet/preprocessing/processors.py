@@ -3,11 +3,42 @@ from os.path import join
 import numpy as np
 import cPickle as pickle
 import os
+import simplejson
 
 from spodernet.utils.util import get_data_path, write_to_hdf, make_dirs_if_not_exists, load_hdf_file
 
 from spodernet.utils.logger import Logger
 log = Logger('processors.py.txt')
+
+class AbstractLineProcessors(object):
+    def process(self, line):
+        return line
+
+class JsonLoaderProcessors(object):
+    def process(self, line):
+        return simplejson.loads(line)
+
+class RemoveLineOnJsonValueCondition(object):
+    def __init__(self, key, func_condition):
+        self.key = key
+        self.func_condition = func_condition
+
+    def process(self, json_dict):
+        if self.func_condition(json_dict[self.key]):
+            return None
+        else:
+            return json_dict
+
+class DictKey2ListMapper(object):
+    def __init__(self, ordered_keys_source):
+        self.ordered_keys_source = ordered_keys_source
+
+    def process(self, dict_object):
+        list_of_ordered_values = []
+        for key in self.ordered_keys_source:
+            list_of_ordered_values.append(dict_object[key])
+        return list_of_ordered_values
+
 
 class AbstractProcessor(object):
     def __init__(self):

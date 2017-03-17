@@ -3,6 +3,7 @@ from os.path import join
 import os
 import shutil
 import simplejson as json
+import zipfile
 
 from spodernet.preprocessing.vocab import Vocab
 
@@ -11,6 +12,7 @@ log = Logger('pipeline.py.txt')
 
 class Pipeline(object):
     def __init__(self, name, delete_all_previous_data=False):
+        self.line_processors = []
         self.text_processors = []
         self.sent_processors = []
         self.token_processors = []
@@ -32,6 +34,9 @@ class Pipeline(object):
 
         self.state = {'name' : name, 'home' : home, 'path' : self.root, 'data' : {}}
         self.state['vocab'] = Vocab(path=join(self.root, 'vocab'))
+
+    def add_line_processor(self, line_processor):
+        self.line_processors.append(line_processor)
 
     def add_text_processor(self, text_processor, keys=['input', 'support', 'target']):
         text_processor.link_with_pipeline(self.state)
@@ -59,13 +64,28 @@ class Pipeline(object):
 
     def stream_file(self, path):
         log.debug('Processing file {0}'.format(path))
-        for line in open(path):
-            # we have comma separated files
-            inp, support, target = json.loads(line)
-            log.statistical('this is some input in text format {0}', 0.0001, inp)
-            log.statistical('this is a support in text format {0}', 0.0001, support)
-            log.statistical('this is a target in text format {0}', 0.0001, target)
-            yield inp, support, target
+        file_handle = None
+        if '.zip' in path:
+            path_to_zip, path_to_file = path.split('.zip')
+            path_to_zip += '.zip'
+            path_to_file = path_to_file[1:]
+
+            archive = zipfile.ZipFile(path_to_zip, 'r')
+            file_handle = archive.open(path_to_file, 'r')
+        else:
+            file_handle = open(path)
+
+        for line in file_handle:
+            filtered = False
+            for linep in self.line_processors:
+                line = linep.process(line)
+                if line is None:
+                    filtered = True
+                    break
+            if filtered:
+                continue
+            else:
+                yield line
 
     def clear_processors(self):
         self.post_processors = []
