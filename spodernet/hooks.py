@@ -21,6 +21,7 @@ class AbstractHook(IAtIterEndObservable, IAtEpochEndObservable):
 
         # https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance
         self.n = 0
+        self.epoch_n = 0
         self.mean = 0
         self.M2 = 0
         self.load_backend_specific_functions()
@@ -48,23 +49,28 @@ class AbstractHook(IAtIterEndObservable, IAtEpochEndObservable):
         self.current_scores.append(metric)
         self.iter_count += 1
         if self.iter_count % self.print_every == 0:
-            self.print_statistic()
+            lower, upper, m, n = self.print_statistic()
             self.n = 0
             self.mean = 0
             self.M2 = 0
+            return lower, upper, m, n
+        return 0, 0, self.mean, self.n
 
     def at_end_of_epoch_event(self, state):
+        if self.n == 0: return 0, 0, 0, 0
         self.epoch_errors.append(self.get_confidence_intervals())
-        self.print_statistic(True)
+        lower, upper, m, n = self.print_statistic(True)
         del self.current_scores[:]
         self.n = 0
         self.mean = 0
         self.M2 = 0
         self.epoch += 1
+        self.iter_count = 0
+        return lower, upper, m, n
 
     def get_confidence_intervals(self, percentile=0.99, limit=1000):
         z = scipy.stats.norm.ppf(percentile)
-        var = self.M2/ (self.n-1)
+        var = self.M2/ (self.n)
         SE = np.sqrt(var/self.n)
         lower = self.mean-(z*SE)
         upper = self.mean+(z*SE)
@@ -79,6 +85,7 @@ class AbstractHook(IAtIterEndObservable, IAtEpochEndObservable):
         log.info(str_message)
         if at_epoch_end: log.info('#'*40)
         if at_epoch_end: log.info('\n')
+        return lower, upper, m, n
 
 class AccuracyHook(AbstractHook):
     def __init__(self, name='', print_every_x_batches=1000):
@@ -96,6 +103,9 @@ class AccuracyHook(AbstractHook):
         elif Config.backend == Backends.TENSORFLOW:
             n = state.argmax.shape[0]
             return np.sum(state.targets==state.argmax)/np.float32(n)
+        elif Config.backend == Backends.TEST:
+            n = state.argmax.shape[0]
+            return np.sum(state.targets==state.argmax)/np.float32(n)
         else:
             raise Exception('Backend has unsupported value {0}'.format(Config.backend))
 
@@ -104,7 +114,12 @@ class LossHook(AbstractHook):
         super(LossHook, self).__init__(name, 'Loss', print_every_x_batches)
 
     def calculate_metric(self, state):
-        return state.loss[0]
+        if Config.backend == Backends.TENSORFLOW:
+            return state.loss
+        elif Config.backend == Backends.TORCH:
+            return state.loss[0]
+        elif Config.backend == Backends.TEST:
+            return state.loss
 
 class ETAHook(AbstractHook, IAtEpochStartObservable):
     def __init__(self, name='', print_every_x_batches=1000):
@@ -142,10 +157,11 @@ class ETAHook(AbstractHook, IAtEpochStartObservable):
         upper -= self.cumulative_t
         lower, m, upper = self.get_time_string(lower), self.get_time_string(m), self.get_time_string(upper)
         log.info('{3} {4}: {2}\t99% CI: ({0}, {1}), n={5}'.format(lower, upper, m, self.name, self.metric_name, n))
+        return lower, upper, m, n
 
     def at_start_of_epoch_event(self, batcher_state):
         self.t.tick('ETA')
-        self.t.tick('Epoch')
+        t = self.t.tick('Epoch')
 
     def at_end_of_epoch_event(self, state):
         self.t.tock('ETA')
@@ -158,3 +174,4 @@ class ETAHook(AbstractHook, IAtEpochStartObservable):
         self.M2 = 0
         self.skipped_first = False
         self.epoch += 1
+        return epoch_time
