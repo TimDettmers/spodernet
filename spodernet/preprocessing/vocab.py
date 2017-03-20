@@ -5,6 +5,9 @@ import numpy as np
 
 '''This models the vocabulary and token embeddings'''
 
+from spodernet.utils.util import Logger
+log = Logger('vocab.py.txt')
+
 class Vocab(object):
     '''Class that manages work/char embeddings'''
 
@@ -80,11 +83,11 @@ class Vocab(object):
             return self.idx2token[-1]
 
     def save_to_disk(self):
-        print('Saving vocab to: {0}'.format(self.path))
+        log.info('Saving vocab to: {0}'.format(self.path))
         pickle.dump([self.token2idx, self.idx2token, self.label2idx,
             self.idx2label], open(self.path, 'wb'),
                     pickle.HIGHEST_PROTOCOL)
 
     def load_from_disk(self):
-        print('Loading vocab from: {0}'.format(self.path))
+        log.info('Loading vocab from: {0}'.format(self.path))
         self.token2idx, self.idx2token, self.label2idx, self.idx2label = pickle.load(open(self.path))

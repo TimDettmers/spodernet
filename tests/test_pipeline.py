@@ -10,15 +10,17 @@ import numpy as np
 import shutil
 import cPickle as pickle
 import itertools
+import scipy.stats
 
 from spodernet.preprocessing.pipeline import Pipeline
 from spodernet.preprocessing.processors import Tokenizer, SaveStateToList, AddToVocab, ToLower, ConvertTokenToIdx, SaveLengthsToState
 from spodernet.preprocessing.processors import JsonLoaderProcessors
 from spodernet.preprocessing.processors import StreamToHDF5, CreateBinsByNestedLength
 from spodernet.preprocessing.vocab import Vocab
-from spodernet.preprocessing.batching import StreamBatcher
+from spodernet.preprocessing.batching import StreamBatcher, BatcherState
 from spodernet.utils.util import get_data_path, load_hdf_file
 from spodernet.utils.global_config import Config, Backends
+from spodernet.hooks import LossHook, AccuracyHook, ETAHook
 
 from spodernet.utils.logger import Logger, LogLevel
 log = Logger('test_pipeline.py.txt')
@@ -209,6 +211,8 @@ def test_save_to_list_text():
 
     inp_texts = state['data']['text']['input']
     sup_texts = state['data']['text']['support']
+    assert len(inp_texts) == 3, 'The input data size should be three samples, but found {0}'.format(len(inp_texts))
+    assert len(inp_texts) == 3, 'The input data size should be three samples, but found {0}'.format(len(sup_texts))
     with open(path) as f:
         for inp1, sup1, line in zip(inp_texts, sup_texts, f):
             inp2, sup2, t = json.loads(line)
@@ -775,4 +779,63 @@ def test_bin_streamer():
 
     # 5. clean up
     shutil.rmtree(base_path)
+
+
+names = ['loss', 'accuracy']
+print_every = [20, 7, 13, 2000]
+test_data = [r for r in itertools.product(names, print_every)]
+ids = ['name={0}, print_every={1}'.format(name, print_every) for name, print_every in test_data]
+@pytest.mark.parametrize("hook_name, print_every", test_data, ids=ids)
+def test_hook(hook_name, print_every):
+    def calc_confidence_interval(expected_loss):
+        mean = np.mean(expected_loss)
+        std = np.std(expected_loss)
+        z = scipy.stats.norm.ppf(0.99)
+        se = z*std/np.sqrt(print_every)
+        lower_expected = mean-se
+        upper_expected = mean+se
+        return lower_expected, upper_expected, mean, n
+
+    def generate_loss():
+        loss = np.random.rand()
+        state = BatcherState()
+        state.loss = loss
+        return loss, state
+
+    def generate_accuracy():
+        target = np.random.randint(0,3,print_every)
+        argmax = np.random.randint(0,3,print_every)
+        state = BatcherState()
+        state.targets = target
+        state.argmax = argmax
+        accuracy = np.mean(target==argmax)
+        return accuracy, state
+
+    if hook_name == 'loss':
+        hook = LossHook(print_every_x_batches=print_every)
+        gen_func = generate_loss
+    elif hook_name == 'accuracy':
+        hook = AccuracyHook(print_every_x_batches=print_every)
+        gen_func = generate_accuracy
+
+    expected_loss = []
+    state = BatcherState()
+    for epoch in range(2):
+        for i in range(100):
+            metric, state = gen_func()
+            expected_loss.append(metric)
+            lower, upper, m, n = hook.at_end_of_iter_event(state)
+            if (i+1) % print_every == 0:
+                lower_expected, upper_expected, mean, n2 = calc_confidence_interval(expected_loss)
+                print(i, epoch)
+                assert n == n2, 'Sample size not equal!'
+                assert np.allclose(m, mean), 'Mean not equal!'
+                assert np.allclose(lower, lower_expected), 'Lower confidence bound not equal!'
+                assert np.allclose(upper, upper_expected), 'Upper confidence bound not equal!'
+                del expected_loss[:]
+
+        lower, upper, m, n = hook.at_end_of_epoch_event(state)
+        lower_expected, upper_expected, mean, n2 = calc_confidence_interval(expected_loss)
+        del expected_loss[:]
+
 

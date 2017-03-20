@@ -95,7 +95,8 @@ class Logger:
     def _log(self, message, log_level=LogLevel.INFO, *args):
         if log_level >= Logger.GLOBAL_LOG_LEVEL:
             message = self.wrap_message(message, log_level, *args)
-            print(message)
-            self.f.write(message + '\n')
+            if message.strip() != '':
+                print(message)
+                self.f.write(message + '\n')
 
 
