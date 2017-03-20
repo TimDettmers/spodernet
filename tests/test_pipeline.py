@@ -11,10 +11,11 @@ import shutil
 import cPickle as pickle
 import itertools
 import scipy.stats
+from io import StringIO
 
 from spodernet.preprocessing.pipeline import Pipeline
 from spodernet.preprocessing.processors import Tokenizer, SaveStateToList, AddToVocab, ToLower, ConvertTokenToIdx, SaveLengthsToState
-from spodernet.preprocessing.processors import JsonLoaderProcessors
+from spodernet.preprocessing.processors import JsonLoaderProcessors, RemoveLineOnJsonValueCondition, DictKey2ListMapper
 from spodernet.preprocessing.processors import StreamToHDF5, CreateBinsByNestedLength
 from spodernet.preprocessing.vocab import Vocab
 from spodernet.preprocessing.batching import StreamBatcher, BatcherState
@@ -37,6 +38,64 @@ def get_test_data_path_dict():
     paths['wiki'] = './tests/test_data/wiki.json'
 
     return paths
+
+def test_dict2listmapper():
+    with open(join(get_data_path(), 'test.txt'), 'wb') as f:
+        for i in range(10):
+            test_dict = {}
+            test_dict['key1'] = str(i+5)
+            test_dict['key2'] = str(i+3)
+            test_dict['key3'] = str(i+4)
+            f.write(json.dumps(test_dict) + '\n')
+
+    p = Pipeline('abc')
+    p.add_path(join(get_data_path(), 'test.txt'))
+    p.add_line_processor(JsonLoaderProcessors())
+    p.add_line_processor(DictKey2ListMapper(['key3', 'key1', 'key2']))
+    p.add_text_processor(SaveStateToList('lines'))
+    state = p.execute()
+    for i, line in enumerate(state['data']['lines']['input']):
+        assert int(line) == i+4, 'Input values does not correspond to the json key mapping.'
+    for i, line in enumerate(state['data']['lines']['support']):
+        assert int(line) == i+5, 'Support values does not correspond to the json key mapping.'
+    for i, line in enumerate(state['data']['lines']['target']):
+        assert int(line) == i+3, 'Target values does not correspond to the json key mapping.'
+
+    os.remove(join(get_data_path(), 'test.txt'))
+    shutil.rmtree(join(get_data_path(), 'abc'))
+
+def test_remove_on_json_condition():
+    with open(join(get_data_path(), 'test.txt'), 'wb') as f:
+        for i in range(10):
+            test_dict = {}
+            test_dict['key1'] = str(i+5)
+            test_dict['key2'] = str(i+3)
+            test_dict['key3'] = str(i+4)
+            f.write(json.dumps(test_dict) + '\n')
+            test_dict = {}
+            test_dict['key1'] = str(i+5)
+            test_dict['key2'] = str(i+3)
+            test_dict['key3'] = 'remove me'
+            f.write(json.dumps(test_dict) + '\n')
+
+    p = Pipeline('abc')
+    p.add_path(join(get_data_path(), 'test.txt'))
+    p.add_line_processor(JsonLoaderProcessors())
+    p.add_line_processor(DictKey2ListMapper(['key3', 'key1', 'key2']))
+    p.add_line_processor(RemoveLineOnJsonValueCondition('input', lambda inp: inp == 'remove me'))
+    p.add_text_processor(SaveStateToList('lines'))
+    assert len(state['data']['lines']['input']) == 10, 'Length different from filtered length!'
+    state = p.execute()
+    for i, line in enumerate(state['data']['lines']['input']):
+        assert int(line) == i+4, 'Input values does not correspond to the json key mapping.'
+    for i, line in enumerate(state['data']['lines']['support']):
+        assert int(line) == i+5, 'Support values does not correspond to the json key mapping.'
+    for i, line in enumerate(state['data']['lines']['target']):
+        assert int(line) == i+3, 'Target values does not correspond to the json key mapping.'
+
+    os.remove(join(get_data_path(), 'test.txt'))
+    shutil.rmtree(join(get_data_path(), 'abc'))
+
 
 def test_tokenization():
     tokenizer = nltk.tokenize.WordPunctTokenizer()

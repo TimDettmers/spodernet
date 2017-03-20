@@ -10,10 +10,6 @@ from spodernet.utils.util import get_data_path, write_to_hdf, make_dirs_if_not_e
 from spodernet.utils.logger import Logger
 log = Logger('processors.py.txt')
 
-class AbstractLineProcessors(object):
-    def process(self, line):
-        return line
-
 class JsonLoaderProcessors(object):
     def process(self, line):
         return simplejson.loads(line)
@@ -179,6 +175,7 @@ class SaveStateToList(AbstractProcessor):
 
     def process(self, data, inp_type):
         if inp_type not in self.data: self.data[inp_type] = []
+        print(data)
         self.data[inp_type].append(data)
         return data
 
