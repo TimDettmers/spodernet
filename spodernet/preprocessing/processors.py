@@ -322,7 +322,6 @@ class CreateBinsByNestedLength(AbstractLoopLevelListOfTokensProcessor):
         self.length_key2bin_idx = {}
         self.performed_search = False
         self.name = name
-        self.max_sample_idx = -1
         self.inp_type2idx = {'support' : 0, 'input' : 0, 'target' : 0}
         self.idx2data = {'support' : {}, 'input' : {}, 'target' : {}}
         self.binidx2data = {'support' : {}, 'input' : {}, 'index' : {}, 'target' : {}}
@@ -461,7 +460,6 @@ class CreateBinsByNestedLength(AbstractLoopLevelListOfTokensProcessor):
         pickle.dump(config, open(join(self.base_path, 'hdf5_config.pkl'), 'w'), pickle.HIGHEST_PROTOCOL)
 
         self.performed_search = True
-        self.max_sample_idx = l1.size-1
 
 
     def calculate_wastes(self, l1, l2):
@@ -502,6 +500,7 @@ class CreateBinsByNestedLength(AbstractLoopLevelListOfTokensProcessor):
         # assign this here for testing purposes
         self.wasted_fraction = wasted_fraction
         self.total_bin_count = total_bin_count
+        #self.num_samples = total_bin_count/(1.0-wasted_fraction)
 
         return wasted_lengths, bin_by_size
 

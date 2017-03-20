@@ -9,6 +9,7 @@ import simplejson as json
 import numpy as np
 import shutil
 import cPickle as pickle
+import itertools
 
 from spodernet.preprocessing.pipeline import Pipeline
 from spodernet.preprocessing.processors import Tokenizer, SaveStateToList, AddToVocab, ToLower, ConvertTokenToIdx, SaveLengthsToState
@@ -30,6 +31,7 @@ def get_test_data_path_dict():
     paths = {}
     paths['snli'] = './tests/test_data/snli.json'
     paths['snli3k'] = './tests/test_data/snli_3k.json'
+    paths['snli1k'] = './tests/test_data/snli_1k.json'
     paths['wiki'] = './tests/test_data/wiki.json'
 
     return paths
@@ -591,9 +593,14 @@ def test_bin_search():
     shutil.rmtree(base_path)
 
 
-test_data = [(500), (100000)]
-@pytest.mark.parametrize("samples_per_file", test_data, ids= lambda x: 'samples_per_file={0}'.format(x))
-def test_non_random_stream_batcher(samples_per_file):
+batch_size = [17, 128]
+samples_per_file = [500, 100000]
+randomize = [True, False]
+test_data = [r for r in itertools.product(samples_per_file, randomize, batch_size)]
+str_func = lambda i, j, k: 'samples_per_file={0}, randomize={1}, batch_size={2}'.format(i, j, k)
+ids = [str_func(i,j,k) for i,j,k in test_data]
+@pytest.mark.parametrize("samples_per_file, randomize, batch_size", test_data, ids=ids)
+def test_non_random_stream_batcher(samples_per_file, randomize, batch_size):
     tokenizer = nltk.tokenize.WordPunctTokenizer()
     data_folder_name = 'snli_test'
     pipeline_folder = 'test_pipeline'
@@ -604,7 +611,7 @@ def test_non_random_stream_batcher(samples_per_file):
 
     # 1. Setup pipeline to save lengths and generate vocabulary
     p = Pipeline(pipeline_folder)
-    p.add_path(get_test_data_path_dict()['snli3k'])
+    p.add_path(get_test_data_path_dict()['snli1k'])
     p.add_line_processor(JsonLoaderProcessors())
     p.add_sent_processor(Tokenizer(tokenizer.tokenize))
     p.add_post_processor(SaveLengthsToState())
@@ -633,9 +640,9 @@ def test_non_random_stream_batcher(samples_per_file):
     assert len(streamer.config['counts']) > 0,'Counts of samples per file must be larger than zero (probably no files have been saved)'
     if samples_per_file == 100000:
         count = len(streamer.config['counts'])
-        assert count == 1,'Samples per files is 100000 and there should be one file for 3k samples, but there are {0}'.format(count)
+        assert count == 1,'Samples per files is 100000 and there should be one file for 1k samples, but there are {0}'.format(count)
 
-    assert streamer.num_samples == 3000, 'There should be 3000 samples for this dataset, but found {1}!'.format(streamer.num_samples)
+    assert streamer.num_samples == 1000, 'There should be 1000 samples for this dataset, but found {1}!'.format(streamer.num_samples)
 
 
     # 3. parse data to numpy
@@ -660,11 +667,9 @@ def test_non_random_stream_batcher(samples_per_file):
 
         T[i] = sample_t[0]
 
-    batch_size = 128
-    epochs = 5
-    batcher = StreamBatcher(pipeline_folder, data_folder_name, batch_size, loader_threads=8)
+    epochs = 2
+    batcher = StreamBatcher(pipeline_folder, data_folder_name, batch_size, loader_threads=8, randomize=randomize)
     del batcher.at_batch_prepared_observers[:]
-    print(batcher.at_batch_prepared_observers)
 
     # 4. test data equality
     for epoch in range(epochs):
@@ -684,89 +689,6 @@ def test_non_random_stream_batcher(samples_per_file):
     # 5. clean up
     shutil.rmtree(base_path)
 
-
-def test_random_stream_batcher():
-    tokenizer = nltk.tokenize.WordPunctTokenizer()
-    data_folder_name = 'snli_test'
-    pipeline_folder = 'test_pipeline'
-    base_path = join(get_data_path(), pipeline_folder, data_folder_name)
-    # clean all data from previous failed tests   
-    if os.path.exists(base_path):
-        shutil.rmtree(base_path)
-
-    # 1. Setup pipeline to save lengths and generate vocabulary
-    p = Pipeline(pipeline_folder)
-    p.add_path(get_test_data_path_dict()['snli3k'])
-    p.add_line_processor(JsonLoaderProcessors())
-    p.add_sent_processor(Tokenizer(tokenizer.tokenize))
-    p.add_post_processor(SaveLengthsToState())
-    p.execute()
-    p.clear_processors()
-
-    # 2. Process the data further to stream it to hdf5
-    p.add_sent_processor(Tokenizer(tokenizer.tokenize))
-    p.add_token_processor(AddToVocab())
-    p.add_post_processor(ConvertTokenToIdx())
-    p.add_post_processor(SaveStateToList('idx'))
-    # 2 samples per file -> 50 files
-    streamer = StreamToHDF5(data_folder_name, samples_per_file=500)
-    p.add_post_processor(streamer)
-    state = p.execute()
-
-    # 2. Load data from the SaveStateToList hook
-    inp_indices = state['data']['idx']['input']
-    sup_indices = state['data']['idx']['support']
-    t_indices = state['data']['idx']['target']
-    max_inp_len = np.max(state['data']['lengths']['input'])
-    max_sup_len = np.max(state['data']['lengths']['support'])
-    # For SNLI the targets consist of single words'
-    assert np.max(state['data']['lengths']['target']) == 1, 'Max index label length should be 1'
-
-    # 3. parse data to numpy
-    n = len(inp_indices)
-    X = np.zeros((n, max_inp_len), dtype=np.int64)
-    X_len = np.zeros((n), dtype=np.int64)
-    S = np.zeros((n, max_sup_len), dtype=np.int64)
-    S_len = np.zeros((n), dtype=np.int64)
-    T = np.zeros((n), dtype=np.int64)
-
-    for i in range(len(inp_indices)):
-        sample_inp = inp_indices[i][0]
-        sample_sup = sup_indices[i][0]
-        sample_t = t_indices[i][0]
-        l = len(sample_inp)
-        X_len[i] = l
-        X[i, :l] = sample_inp
-
-        l = len(sample_sup)
-        S_len[i] = l
-        S[i, :l] = sample_sup
-
-        T[i] = sample_t[0]
-
-    batch_size = 128
-    epochs = 8
-    batcher = StreamBatcher(pipeline_folder, data_folder_name, batch_size, loader_threads=8, randomize=True)
-    del batcher.at_batch_prepared_observers[:] # we want to test on raw numpy data
-    print(batcher.at_batch_prepared_observers)
-
-    # 4. test data equality
-    for epoch in range(epochs):
-        for x, x_len, s, s_len, t, idx in batcher:
-            assert np.int32 == x_len.dtype, 'Input length type should be int32!'
-            assert np.int32 == s_len.dtype, 'Support length type should be int32!'
-            assert np.int32 == x.dtype, 'Input type should be int32!'
-            assert np.int32 == s.dtype, 'Input type should be int32!'
-            assert np.int32 == t.dtype, 'Target type should be int32!'
-            assert np.int32 == idx.dtype, 'Index type should be int32!'
-            np.testing.assert_array_equal(X[idx], x, 'Input data not equal!')
-            np.testing.assert_array_equal(S[idx], s, 'Support data not equal!')
-            np.testing.assert_array_equal(X_len[idx], x_len, 'Input length data not equal!')
-            np.testing.assert_array_equal(S_len[idx], s_len, 'Support length data not equal!')
-            np.testing.assert_array_equal(T[idx], t, 'Target data not equal!')
-
-    # 5. clean up
-    shutil.rmtree(base_path)
 
 def test_bin_streamer():
     tokenizer = nltk.tokenize.WordPunctTokenizer()
@@ -831,7 +753,6 @@ def test_bin_streamer():
     epochs = 3
     batcher = StreamBatcher(pipeline_folder, data_folder_name, batch_size, loader_threads=8, randomize=True)
     del batcher.at_batch_prepared_observers[:] # we want to test on raw numpy data
-    print(batcher.at_batch_prepared_observers)
 
     # 4. test data equality
     for epoch in range(epochs):
