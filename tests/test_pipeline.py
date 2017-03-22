@@ -81,11 +81,12 @@ def test_remove_on_json_condition():
     p = Pipeline('abc')
     p.add_path(join(get_data_path(), 'test.txt'))
     p.add_line_processor(JsonLoaderProcessors())
+    p.add_line_processor(RemoveLineOnJsonValueCondition('key3', lambda inp: inp == 'remove me'))
     p.add_line_processor(DictKey2ListMapper(['key3', 'key1', 'key2']))
-    p.add_line_processor(RemoveLineOnJsonValueCondition('input', lambda inp: inp == 'remove me'))
     p.add_text_processor(SaveStateToList('lines'))
-    assert len(state['data']['lines']['input']) == 10, 'Length different from filtered length!'
     state = p.execute()
+
+    assert len(state['data']['lines']['input']) == 10, 'Length different from filtered length!'
     for i, line in enumerate(state['data']['lines']['input']):
         assert int(line) == i+4, 'Input values does not correspond to the json key mapping.'
     for i, line in enumerate(state['data']['lines']['support']):

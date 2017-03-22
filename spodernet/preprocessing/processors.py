@@ -7,6 +7,7 @@ import simplejson
 
 from spodernet.utils.util import get_data_path, write_to_hdf, make_dirs_if_not_exists, load_hdf_file
 from spodernet.interfaces import IAtBatchPreparedObservable
+from spodernet.utils.global_config import Config
 
 from spodernet.utils.logger import Logger
 log = Logger('processors.py.txt')
@@ -22,6 +23,23 @@ class KeyToKeyMapper(IAtBatchPreparedObservable):
             new_str2var[key2] = str2var[key1]
 
         return new_str2var
+
+class TargetIdx2MultiTarget(IAtBatchPreparedObservable):
+    def __init__(self, num_labels):
+        self.num_labels = num_labels
+
+
+    def at_batch_prepared(self, batch_parts):
+        inp, inp_len, sup, sup_len, t, idx = batch_parts
+        new_t = np.zeros((Config.batch_size, self.num_labels), dtype=np.int64)
+        for i, row in enumerate(t):
+            if len(t.shape) == 1:
+                new_t[i, row] = 1
+            else:
+                for col in row:
+                    new_t[i, col] = 1
+
+        return [inp, inp_len, sup, sup_len, new_t, idx]
 
 class ListIndexRemapper(object):
     def __init__(self, list_of_new_idx):
@@ -404,7 +422,9 @@ class CreateBinsByNestedLength(AbstractLoopLevelListOfTokensProcessor):
                 X_new = np.array(self.binidx2data['input'][bin_idx], dtype=np.int32)
                 S_new = np.array(self.binidx2data['support'][bin_idx], dtype=np.int32)
                 idx_new = np.array(self.binidx2data['index'][bin_idx], dtype=np.int32)
-                t_new = np.array(self.binidx2data['target'][bin_idx], dtype=np.int32).reshape(-1,)
+                t_new = np.array(self.binidx2data['target'][bin_idx], dtype=np.int32)
+                if t_new.shape[1] == 1:
+                    t_new = t_new.reshape(-1)
 
                 pathX = join(self.base_path, 'input_bin_{0}.hdf5'.format(bin_idx))
                 pathS = join(self.base_path, 'support_bin_{0}.hdf5'.format(bin_idx))
@@ -526,6 +546,7 @@ class CreateBinsByNestedLength(AbstractLoopLevelListOfTokensProcessor):
         #self.num_samples = total_bin_count/(1.0-wasted_fraction)
 
         return wasted_lengths, bin_by_size
+
 
 
 
