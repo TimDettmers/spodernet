@@ -195,9 +195,6 @@ class StreamBatcher(object):
             self.loaders.append(DataLoaderSlave(self, batchidx2paths, batchidx2start_end, randomize, self.paths, shard2batchidx, seed, self.fractions))
             self.loaders[-1].start()
 
-        while self.prefetch_batch_idx < loader_threads:
-            self.work.put(self.prefetch_batch_idx)
-            self.prefetch_batch_idx += 1
 
     def __del__(self):
         log.debug('Stopping threads...')
@@ -294,6 +291,10 @@ class StreamBatcher(object):
         return self
 
     def next(self):
+        if self.batch_idx == 0:
+            while self.prefetch_batch_idx < self.loader_threads:
+                self.work.put(self.prefetch_batch_idx)
+                self.prefetch_batch_idx += 1
         if self.batch_idx + 1 < self.num_batches:
             batch_parts = self.get_next_batch_parts()
             self.publish_end_of_iter_event()
