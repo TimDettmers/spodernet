@@ -44,7 +44,7 @@ class DataLoaderSlave(Thread):
         self.current_data = {}
         self.randomize = randomize
         self.num_batches = len(batchidx2paths.keys())
-        self.rdm = np.random.RandomState(234)
+        self.rdm = np.random.RandomState(234+seed)
         self.shard_fractions = shard_fractions
         self.shard2batchidx = shard2batchidx
         self.paths = paths
@@ -145,7 +145,7 @@ class DataLoaderSlave(Thread):
 
 
 class StreamBatcher(object):
-    def __init__(self, pipeline_name, name, batch_size, loader_threads=8, randomize=False, seed=234666):
+    def __init__(self, pipeline_name, name, batch_size, loader_threads=8, randomize=False, seed=None):
         config_path = join(get_data_path(), pipeline_name, name, 'hdf5_config.pkl')
         config = pickle.load(open(config_path))
         self.paths = config['paths']
@@ -159,10 +159,13 @@ class StreamBatcher(object):
         self.prepared_batchidx = Queue.Queue()
         self.work = Queue.Queue()
         self.cached_batches = {}
-        eta = ETAHook(name, print_every_x_batches=1000)
-        self.end_iter_observers = [eta]
-        self.end_epoch_observers = [eta]
-        self.start_epoch_observers = [eta]
+        #eta = ETAHook(name, print_every_x_batches=1000)
+        #self.end_iter_observers = [eta]
+        #self.end_epoch_observers = [eta]
+        #self.start_epoch_observers = [eta]
+        self.end_iter_observers = []
+        self.end_epoch_observers = []
+        self.start_epoch_observers = []
         self.at_batch_prepared_observers = []
         self.state = BatcherState()
         self.current_iter = 0
@@ -188,9 +191,7 @@ class StreamBatcher(object):
         batchidx2paths, batchidx2start_end, shard2batchidx = self.create_batchidx_maps(config['counts'])
 
         for i in range(loader_threads):
-            if randomize:
-                if seed is None:
-                    seed = 23432435345 % ((i+1)*17)
+            seed = 2345 + (i*83)
             self.loaders.append(DataLoaderSlave(self, batchidx2paths, batchidx2start_end, randomize, self.paths, shard2batchidx, seed, self.fractions))
             self.loaders[-1].start()
 

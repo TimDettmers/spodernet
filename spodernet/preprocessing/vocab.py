@@ -52,6 +52,9 @@ class Vocab(object):
     def num_embeddings(self):
         return len(self.token2idx)
 
+    def num_labels(self):
+        return len(self.label2idx)
+
     def add_token(self, token):
         if token not in self.token2idx:
             self.token2idx[token] = self.next_idx
