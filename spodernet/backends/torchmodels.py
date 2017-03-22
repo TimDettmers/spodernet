@@ -28,6 +28,44 @@ class TorchEmbedding(torch.nn.Module, AbstractModel):
 
         return embedded_results
 
+class TorchBiDirectionalLSTM(torch.nn.Module, AbstractModel):
+    def __init__(self, input_size, hidden_size,
+            dropout=0.0, layers=1,
+            bidirectional=True, to_cuda=False, conditional_encoding=True):
+        super(TorchBiDirectionalLSTM, self).__init__()
+
+        use_bias = True
+        num_directions = (1 if not bidirectional else 2)
+
+        self.lstm = LSTM(input_size,hidden_size,layers,
+                         use_bias,True,0.2,bidirectional)
+
+        # states of both LSTMs
+        self.h0 = None
+        self.c0 = None
+
+        self.h0 = Variable(torch.FloatTensor(input_size, Config.batch_size, hidden_size))
+        self.c0 = Variable(torch.FloatTensor(input_size, Config.batch_size, hidden_size))
+
+        if Config.cuda:
+            self.h0 = self.h0.cuda()
+            self.c0 = self.c0.cuda()
+
+    def forward(self, str2var, *args):
+        self.expected_str2var_keys(str2var, [])
+        self.expected_args('embedded seq', 'size [batch, time steps, embedding dim]')
+        self.generated_outputs('LSTM output seq', 'size [batch, time steps, 2x hidden dim]')
+        seq = args
+        self.h0.data.zero_()
+        self.c0.data.zero_()
+        out, hid = self.lstm(seq, (self.h0, self.c0))
+        return [out, hid]
+
+class TorchLSTMCell(torch.nn.Module.AbstractModel):
+    def __init__(self):
+        pass
+
+    def forward(self, str2var, *args):
 
 class TorchPairedBiDirectionalLSTM(torch.nn.Module, AbstractModel):
     def __init__(self, input_size, hidden_size,

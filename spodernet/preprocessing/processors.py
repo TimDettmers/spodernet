@@ -6,9 +6,33 @@ import os
 import simplejson
 
 from spodernet.utils.util import get_data_path, write_to_hdf, make_dirs_if_not_exists, load_hdf_file
+from spodernet.interfaces import IAtBatchPreparedObservable
 
 from spodernet.utils.logger import Logger
 log = Logger('processors.py.txt')
+
+class KeyToKeyMapper(IAtBatchPreparedObservable):
+    def __init__(self, key2key):
+        self.key2key = key2key
+
+    def at_batch_prepared(self, batch_parts):
+        str2var = batch_parts
+        new_str2var = {}
+        for key1, key2 in self.key2key.items():
+            new_str2var[key2] = str2var[key1]
+
+        return new_str2var
+
+class ListIndexRemapper(object):
+    def __init__(self, list_of_new_idx):
+        self.list_of_new_idx = list_of_new_idx
+
+    def at_batch_prepared(self, line):
+        new_line = []
+        for idx in self.list_of_new_idx:
+            new_line.append(line[idx])
+
+        return new_line
 
 class JsonLoaderProcessors(object):
     def process(self, line):
@@ -139,8 +163,11 @@ class AddToVocab(AbstractProcessor):
     def process(self, token, inp_type):
         if inp_type == 'target':
             self.state['vocab'].add_label(token)
+            log.statistical('Example vocab target token {0}', 0.01, token)
         else:
             self.state['vocab'].add_token(token)
+            message = 'Example vocab {0} token'.format(inp_type)
+            log.statistical(message + ': {0}', 0.01, token)
         return token
 
 class ToLower(AbstractProcessor):
@@ -175,7 +202,6 @@ class SaveStateToList(AbstractProcessor):
 
     def process(self, data, inp_type):
         if inp_type not in self.data: self.data[inp_type] = []
-        print(data)
         self.data[inp_type].append(data)
         return data
 
@@ -265,7 +291,7 @@ class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
             for i in range(fractions.size):
                 self.config['paths'].append(self.paths[i])
 
-            pickle.dump(self.config, open(join(self.base_path, 'hdf5_config.pkl'), 'w'), pickle.HIGHEST_PROTOCOL)
+            pickle.dump(self.config, open(join(self.base_path, 'hdf5_config.pkl'), 'w'))
 
         return tokens
 
@@ -454,7 +480,7 @@ class CreateBinsByNestedLength(AbstractLoopLevelListOfTokensProcessor):
         config['fractions'] = (np.float64(np.array(counts)) / np.sum(counts))
         config['counts'] = counts
         self.config = config
-        pickle.dump(config, open(join(self.base_path, 'hdf5_config.pkl'), 'w'), pickle.HIGHEST_PROTOCOL)
+        pickle.dump(config, open(join(self.base_path, 'hdf5_config.pkl'), 'w'))
 
         self.performed_search = True
 

@@ -66,6 +66,8 @@ def convert_state(state):
         state.argmax = state.argmax.data
     if isinstance(state.pred, Variable):
         state.pred = state.pred.data
+    if isinstance(state.loss, Variable):
+        state.loss = state.loss.data
 
     return state
 
