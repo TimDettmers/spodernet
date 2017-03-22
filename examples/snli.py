@@ -151,15 +151,15 @@ def preprocess_SNLI(delete_data=False):
 
 def main():
     Logger.GLOBAL_LOG_LEVEL = LogLevel.INFO
-    #Config.backend = Backends.TENSORFLOW
-    Config.backend = Backends.TORCH
-    Config.cuda = False
+    Config.backend = Backends.TENSORFLOW
+    #Config.backend = Backends.TORCH
+    Config.cuda = True
     Config.dropout = 0.2
     print(Config.L2)
     Config.L2 = 0.0001
     print(Config.L2)
 
-    do_process = True
+    do_process = False
     if do_process:
         preprocess_SNLI(delete_data=True)
 
@@ -178,8 +178,8 @@ def main():
     dev_batcher = StreamBatcher('snli_example', 'snli_dev', batch_size)
     test_batcher  = StreamBatcher('snli_example', 'snli_test', batch_size)
 
-    train_batcher.subscribe_to_events(AccuracyHook('Train', print_every_x_batches=10))
-    dev_batcher.subscribe_to_events(AccuracyHook('Dev', print_every_x_batches=10))
+    train_batcher.subscribe_to_events(AccuracyHook('Train', print_every_x_batches=1000))
+    dev_batcher.subscribe_to_events(AccuracyHook('Dev', print_every_x_batches=1000))
 
     model = Model()
     model.add(Embedding(128, vocab.num_embeddings))
@@ -188,8 +188,9 @@ def main():
 
 
     t = Trainer(model)
-    t.train(train_batcher, iterations=50)
-    t.evaluate(dev_batcher, iterations=20)
+    for i in range(10):
+        t.train(train_batcher, epochs=1)
+        t.evaluate(dev_batcher)
 
 
 if __name__ == '__main__':

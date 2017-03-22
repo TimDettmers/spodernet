@@ -61,11 +61,6 @@ class TorchBiDirectionalLSTM(torch.nn.Module, AbstractModel):
         out, hid = self.lstm(seq, (self.h0, self.c0))
         return [out, hid]
 
-class TorchLSTMCell(torch.nn.Module.AbstractModel):
-    def __init__(self):
-        pass
-
-    def forward(self, str2var, *args):
 
 class TorchPairedBiDirectionalLSTM(torch.nn.Module, AbstractModel):
     def __init__(self, input_size, hidden_size,
