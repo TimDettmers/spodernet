@@ -82,12 +82,12 @@ class Vocab(object):
         else:
             return self.idx2token[-1]
 
-    def save_to_disk(self):
+    def save_to_disk(self, name=''):
         log.info('Saving vocab to: {0}'.format(self.path))
         pickle.dump([self.token2idx, self.idx2token, self.label2idx,
-            self.idx2label], open(self.path, 'wb'),
+            self.idx2label], open(self.path + name, 'wb'),
                     pickle.HIGHEST_PROTOCOL)
 
-    def load_from_disk(self):
-        log.info('Loading vocab from: {0}'.format(self.path))
+    def load_from_disk(self, name=''):
+        log.info('Loading vocab from: {0}'.format(self.path + name))
         self.token2idx, self.idx2token, self.label2idx, self.idx2label = pickle.load(open(self.path))

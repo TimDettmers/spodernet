@@ -9,7 +9,7 @@ log = Logger('util.py.txt')
 
 def write_to_hdf(path, data):
     '''Writes a numpy array to a hdf5 file under the given path.'''
-    #log.debug('Saving hdf5 file to: {0}', path)
+    log.debug_once('Saving hdf5 file to: {0}', path)
     h5file = h5py.File(path, "w")
     h5file.create_dataset("default", data=data)
     h5file.close()
@@ -17,7 +17,7 @@ def write_to_hdf(path, data):
 
 def load_hdf_file(path, keyword='default'):
     '''Reads and returns a numpy array for a hdf5 file'''
-    #log.debug('Reading hdf5 file from: {0}', path)
+    log.debug_once('Reading hdf5 file from: {0}', path)
     h5file = h5py.File(path, 'r')
     dset = h5file.get(keyword)
     data = dset[:]

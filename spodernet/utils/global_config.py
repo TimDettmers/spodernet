@@ -16,6 +16,8 @@ class Config:
     backend = Backends.TORCH
     L2 = 0.000
     cuda = False
+    embedding_dim = 128
+    hidden_size = 256
 
     @staticmethod
     def parse_argv(argv):
@@ -53,6 +55,8 @@ params2type['learning_rate'] = lambda x: float(x)
 params2type['dropout'] = lambda x: float(x)
 params2type['batch_size'] = lambda x: int(x)
 params2type['L2'] = lambda x: float(x)
+params2type['embedding_dim'] = lambda x: int(x)
+params2type['hidden_size'] = lambda x: int(x)
 
 alias2params = {}
 alias2params['lr'] = 'learning_rate'
@@ -64,5 +68,7 @@ params2field['learning_rate'] = lambda x: setattr(Config, 'learning_rate', x)
 params2field['dropout'] = lambda x: setattr(Config, 'dropout', x)
 params2field['batch_size'] = lambda x: setattr(Config, 'batch_size', x)
 params2field['L2'] = lambda x: setattr(Config, 'L2', x)
+params2field['embedding_dim'] = lambda x: setattr(Config, 'embedding_dim', x)
+params2field['hidden_size'] = lambda x: setattr(Config, 'embedding_dim', x)
 
 

@@ -5,6 +5,7 @@ import datetime
 from spodernet.interfaces import IAtIterEndObservable, IAtEpochEndObservable, IAtEpochStartObservable
 from spodernet.utils.util import Timer
 from spodernet.utils.global_config import Config, Backends
+from spodernet.backends.torchbackend import convert_state
 
 from spodernet.utils.logger import Logger
 log = Logger('hooks.py.txt')
@@ -39,6 +40,7 @@ class AbstractHook(IAtIterEndObservable, IAtEpochEndObservable):
     def at_end_of_iter_event(self, state):
         state = self.convert_state(state)
         metric = self.calculate_metric(state)
+        #print(metric)
 
         self.n += 1
         delta = metric - self.mean
@@ -117,6 +119,7 @@ class LossHook(AbstractHook):
         if Config.backend == Backends.TENSORFLOW:
             return state.loss
         elif Config.backend == Backends.TORCH:
+            state = convert_state(state)
             return state.loss[0]
         elif Config.backend == Backends.TEST:
             return state.loss

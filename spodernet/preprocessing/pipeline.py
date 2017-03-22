@@ -85,6 +85,7 @@ class Pipeline(object):
             if filtered:
                 continue
             else:
+                log.debug_once('First line processed by line processors: {0}', line)
                 yield line
 
     def clear_processors(self):
