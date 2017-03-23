@@ -48,7 +48,6 @@ class DataLoaderSlave(Thread):
         self.shard_fractions = shard_fractions
         self.shard2batchidx = shard2batchidx
         self.paths = paths
-        self.stopping = False
         self._stop = Event()
         self.daemon = True
 
@@ -139,7 +138,11 @@ class DataLoaderSlave(Thread):
             batch_parts = self.publish_at_prepared_batch_event(batch_parts)
             # pass data to streambatcher
             self.stream_batcher.prepared_batches[batch_idx] = batch_parts
-            self.stream_batcher.prepared_batchidx.put(batch_idx)
+            try:
+                self.stream_batcher.prepared_batchidx.put(batch_idx, block=False, timeout=1.0)
+            except:
+                continue
+            print(self.stopped())
 
             self.clean_cache(current_paths)
 
@@ -202,8 +205,8 @@ class StreamBatcher(object):
             worker.stop()
 
         log.debug('Waiting for threads to finish...')
-        for worker in self.loaders:
-            worker.join()
+        while threading.active_count() > 0:
+            time.sleep(0.1)
 
     def subscribe_end_of_iter_event(self, observer):
         self.end_iter_observers.append(observer)
