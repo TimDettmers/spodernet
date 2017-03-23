@@ -658,11 +658,13 @@ def test_bin_search():
 
 
 batch_size = [17, 128]
-samples_per_file = [500, 100000]
+samples_per_file = [500]
 randomize = [True, False]
 test_data = [r for r in itertools.product(samples_per_file, randomize, batch_size)]
+test_data.append((1000000, True, 83))
 str_func = lambda i, j, k: 'samples_per_file={0}, randomize={1}, batch_size={2}'.format(i, j, k)
 ids = [str_func(i,j,k) for i,j,k in test_data]
+test_idx = np.random.randint(0,len(test_data),3)
 @pytest.mark.parametrize("samples_per_file, randomize, batch_size", test_data, ids=ids)
 def test_non_random_stream_batcher(samples_per_file, randomize, batch_size):
     tokenizer = nltk.tokenize.WordPunctTokenizer()
@@ -759,14 +761,14 @@ def test_bin_streamer():
     data_folder_name = 'bin_snli_test'
     pipeline_folder = 'test_pipeline'
     base_path = join(get_data_path(), pipeline_folder, data_folder_name)
-    batch_size = 16
+    batch_size = 4
     # clean all data from previous failed tests   
     if os.path.exists(base_path):
         shutil.rmtree(base_path)
 
     # 1. Setup pipeline to save lengths and generate vocabulary
     p = Pipeline(pipeline_folder)
-    p.add_path(get_test_data_path_dict()['snli3k'])
+    p.add_path(get_test_data_path_dict()['snli1k'])
     p.add_line_processor(JsonLoaderProcessors())
     p.add_sent_processor(Tokenizer(tokenizer.tokenize))
     p.add_post_processor(SaveLengthsToState())
