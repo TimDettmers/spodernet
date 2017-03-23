@@ -60,13 +60,32 @@ class DataLoaderSlave(Thread):
     def load_files_if_needed(self, current_paths):
         if isinstance(current_paths[0], list):
             for paths in current_paths:
+                shuffle_idx = None
                 for path in paths:
                     if path not in self.current_data:
+                        data = load_hdf_file(path)
+                        if shuffle_idx == None and self.randomize:
+                            shuffle_idx = np.arange(data.shape[0])
+                            self.rdm.shuffle(shuffle_idx)
+
+                        if self.randomize:
+                            data = data[shuffle_idx]
                         self.current_data[path] = load_hdf_file(path)
+
+                shuffle_idx = None
         else:
+            shuffle_idx = None
             for path in current_paths:
                 if path not in self.current_data:
-                    self.current_data[path] = load_hdf_file(path)
+                    data = load_hdf_file(path)
+                    if shuffle_idx == None and self.randomize:
+                        shuffle_idx = np.arange(data.shape[0])
+                        self.rdm.shuffle(shuffle_idx)
+
+                    if self.randomize:
+                        data = data[shuffle_idx]
+
+                    self.current_data[path] = data
 
     def create_batch_parts(self, current_paths, start, end):
         # index loaded data for minibatch
@@ -142,7 +161,6 @@ class DataLoaderSlave(Thread):
                 self.stream_batcher.prepared_batchidx.put(batch_idx, block=False, timeout=1.0)
             except:
                 continue
-            print(self.stopped())
 
             self.clean_cache(current_paths)
 
