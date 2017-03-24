@@ -13,8 +13,6 @@ class TensorFlowConfig:
     index = None
     sess = None
 
-    graph_targets = {}
-
     @staticmethod
     def init_batch_size(batch_size):
         TensorFlowConfig.inp = tf.placeholder(tf.int64, [batch_size, None])
@@ -72,42 +70,38 @@ def build_str2var_dict():
         str2var['index'] = TensorFlowConfig.index
         return str2var
 
-def train_model(model, batcher, epochs=1, iterations=None):
-    optimizer = tf.train.AdamOptimizer(0.001)
+class TFTrainer(object):
+    def __init__(self, model):
+        self.sess = TensorFlowConfig.get_session()
+        str2var = build_str2var_dict()
+        self.logits, self.loss, self.argmax = model.forward(str2var)
+        optimizer = tf.train.AdamOptimizer(0.001)
 
-    sess = TensorFlowConfig.get_session()
-    str2var = build_str2var_dict()
-    logits, loss, argmax = model.forward(str2var)
-    TensorFlowConfig.graph_targets['logits'] = logits
-    TensorFlowConfig.graph_targets['loss'] = loss
-    TensorFlowConfig.graph_targets['argmax'] = argmax
+        if Config.L2 != 0.0:
+            self.loss += tf.add_n([tf.nn.l2_loss(v) for v in tf.trainable_variables()]) * Config.L2
 
-    if Config.L2 != 0.0:
-        loss += tf.add_n([tf.nn.l2_loss(v) for v in tf.trainable_variables()]) * Config.L2
+        self.min_op = optimizer.minimize(self.loss)
 
-    min_op = optimizer.minimize(loss)
+        tf.global_variables_initializer().run(session=self.sess)
 
-    tf.global_variables_initializer().run(session=sess)
-    for epoch in range(epochs):
+    def train_model(self, batcher, epochs=1, iterations=None):
+        for epoch in range(epochs):
+            for i, (str2var, feed_dict) in enumerate(batcher):
+                _, argmax_values = self.sess.run([self.min_op, self.argmax], feed_dict=feed_dict)
+
+                batcher.state.argmax = argmax_values
+                batcher.state.targets = feed_dict[TensorFlowConfig.target]
+
+                if iterations > 0:
+                    if i == iterations: break
+
+    def eval_model(self, batcher, iterations=None):
         for i, (str2var, feed_dict) in enumerate(batcher):
-            _, argmax_values = sess.run([min_op, argmax], feed_dict=feed_dict)
+            argmax_values = self.sess.run([self.argmax], feed_dict=feed_dict)[0]
 
             batcher.state.argmax = argmax_values
             batcher.state.targets = feed_dict[TensorFlowConfig.target]
 
             if iterations > 0:
                 if i == iterations: break
-
-def eval_model(model, batcher, iterations=None):
-    sess = TensorFlowConfig.get_session()
-    argmax = TensorFlowConfig.graph_targets['argmax']
-
-    for i, (str2var, feed_dict) in enumerate(batcher):
-        argmax_values = sess.run([argmax], feed_dict=feed_dict)[0]
-
-        batcher.state.argmax = argmax_values
-        batcher.state.targets = feed_dict[TensorFlowConfig.target]
-
-        if iterations > 0:
-            if i == iterations: break
 

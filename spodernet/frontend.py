@@ -27,12 +27,14 @@ class Trainer(object):
     def __init__(self, model):
         self.model = model
 
+        self.trainer_backend = None
         self.train_func = None
         self.eval_func = None
         if Config.backend == Backends.TENSORFLOW:
-            from spodernet.backends.tfbackend import train_model, eval_model
-            self.train_func = train_model
-            self.eval_func = eval_model
+            from spodernet.backends.tfbackend import TFTrainer
+            self.trainer_backend = TFTrainer(model)
+            self.train_func = lambda _, batch, epochs, iterations: self.trainer_backend.train_model(batch, epochs, iterations)
+            self.eval_func = lambda _, batch, iterations: self.trainer_backend.eval_model(batch, iterations)
         elif Config.backend == Backends.TORCH:
             from spodernet.backends.torchbackend import train_model, eval_model
             self.train_func = train_model

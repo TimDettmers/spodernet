@@ -540,7 +540,22 @@ def test_stream_to_hdf5():
     inp_len_paths = [join(base_path, 'input_lengths_' + str(i) + '.hdf5') for i in range(1, 50)]
     sup_len_paths = [join(base_path, 'support_lengths_' + str(i) + '.hdf5') for i in range(1, 50)]
     index_paths = [join(base_path, 'index_' + str(i) + '.hdf5') for i in range(1, 50)]
-    zip_iter = zip([X, S, t, X_len, S_len, index], [inp_paths, sup_paths, target_paths, inp_len_paths, sup_len_paths, index_paths])
+
+    data_idx = 0
+    for path in index_paths:
+        assert os.path.exists(path), 'Index path does not exist!'
+        start = data_idx*2
+        end = (data_idx + 1)*2
+        data_idx += 1
+        index[start:end] = load_hdf_file(path)
+
+    X = X[index]
+    S = S[index]
+    t = t[index]
+    X_len = X_len[index]
+    S_len = S_len[index]
+    zip_iter = zip([X, S, t, X_len, S_len], [inp_paths, sup_paths, target_paths, inp_len_paths, sup_len_paths ])
+    print(index)
 
     # 5. Compare data
     for data, paths in zip_iter:
