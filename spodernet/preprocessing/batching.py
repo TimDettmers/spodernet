@@ -78,7 +78,7 @@ class DataLoaderSlave(Thread):
             for path in current_paths:
                 if path not in self.current_data:
                     data = load_hdf_file(path)
-                    if shuffle_idx == None and self.randomize:
+                    if shuffle_idx is None and self.randomize:
                         shuffle_idx = np.arange(data.shape[0])
                         self.rdm.shuffle(shuffle_idx)
 
@@ -180,10 +180,6 @@ class StreamBatcher(object):
         self.prepared_batchidx = Queue.Queue()
         self.work = Queue.Queue()
         self.cached_batches = {}
-        #eta = ETAHook(name, print_every_x_batches=1000)
-        #self.end_iter_observers = [eta]
-        #self.end_epoch_observers = [eta]
-        #self.start_epoch_observers = [eta]
         self.end_iter_observers = []
         self.end_epoch_observers = []
         self.start_epoch_observers = []

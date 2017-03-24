@@ -153,7 +153,7 @@ class ETAHook(AbstractHook, IAtEpochStartObservable):
         if not self.skipped_first:
             # the first estimation is very unreliable for time measures
             self.skipped_first = True
-            return
+            return 0, 0, 0, 0
         n, lower, m, upper = self.get_confidence_intervals()
         lower -= self.cumulative_t
         m -= self.cumulative_t
