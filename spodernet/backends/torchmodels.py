@@ -68,14 +68,15 @@ class TorchPairedBiDirectionalLSTM(torch.nn.Module, AbstractModel):
             bidirectional=True, to_cuda=False, conditional_encoding=True):
         super(TorchPairedBiDirectionalLSTM, self).__init__()
 
+        self.conditional_encoding = conditional_encoding
         use_bias = True
         num_directions = (1 if not bidirectional else 2)
 
         self.conditional_encoding = conditional_encoding
         self.lstm1 = LSTM(input_size,hidden_size,layers,
-                         use_bias,True,0.0,bidirectional)
+                         use_bias,True,Config.dropout,bidirectional)
         self.lstm2 = LSTM(input_size,hidden_size,layers,
-                         use_bias,True,0.0,bidirectional)
+                         use_bias,True,Config.dropout,bidirectional)
 
         # states of both LSTMs
         self.h01 = None
@@ -95,7 +96,7 @@ class TorchPairedBiDirectionalLSTM(torch.nn.Module, AbstractModel):
             self.h02 = Variable(torch.FloatTensor(num_directions*layers, Config.batch_size, hidden_size))
             self.c02 = Variable(torch.FloatTensor(num_directions*layers, Config.batch_size, hidden_size))
 
-            if to_cuda:
+            if Config.cuda:
                 self.h02 = self.h02.cuda()
                 self.c02 = self.c02.cuda()
 
@@ -131,6 +132,7 @@ class TorchVariableLengthOutputSelection(torch.nn.Module, AbstractModel):
         self.generated_outputs('stacked bidirectional outputs of last timestep', 'dim is [batch_size, 4x hidden size]')
 
         output_lstm1, output_lstm2 = args
+
         l1, l2 = str2var['input_length'], str2var['support_length']
         if self.b1 == None:
             b1 = torch.ByteTensor(output_lstm1.size())

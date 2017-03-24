@@ -52,6 +52,7 @@ class Vocab(object):
     def num_embeddings(self):
         return len(self.token2idx)
 
+    @property
     def num_labels(self):
         return len(self.label2idx)
 

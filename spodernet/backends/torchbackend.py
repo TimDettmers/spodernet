@@ -9,6 +9,16 @@ from spodernet.interfaces import IAtBatchPreparedObservable
 from spodernet.utils.util import Timer
 from spodernet.utils.global_config import Config
 
+class TorchConverter(IAtBatchPreparedObservable):
+    def at_batch_prepared(self, batch_parts):
+        inp, inp_len, sup, sup_len, t, idx = batch_parts
+        inp = Variable(torch.from_numpy(np.int64(inp)))
+        inp_len = Variable(torch.IntTensor(inp_len))
+        sup = Variable(torch.from_numpy(np.int64(sup)))
+        sup_len = Variable(torch.from_numpy(sup_len))
+        t = Variable(torch.from_numpy(np.int64(t)))
+
+        return [inp, inp_len, sup, sup_len, t, idx]
 
 
 class TorchConverter(IAtBatchPreparedObservable):

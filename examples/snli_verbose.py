@@ -18,11 +18,65 @@ from spodernet.utils.logger import Logger, LogLevel
 from spodernet.utils.global_config import Config, Backends
 from spodernet.utils.util import get_data_path
 
-from spodernet.frontend import Model, PairedBiDirectionalLSTM, SoftmaxCrossEntropy, Embedding, Trainer
+from torch.nn.modules.rnn import LSTM
+from torch.autograd import Variable
+import torch
 
 Config.parse_argv(sys.argv)
 
 np.set_printoptions(suppress=True)
+
+class Net(torch.nn.Module):
+
+    def __init__(self, num_embeddings, num_labels):
+        super(Net, self).__init__()
+        self.emb = torch.nn.Embedding(num_embeddings, Config.embedding_dim, padding_idx=0)
+        self.lstm1 = LSTM(Config.embedding_dim, Config.hidden_size, num_layers=1, batch_first=True, bias=True, dropout=Config.dropout, bidirectional=True)
+        self.lstm2 = LSTM(Config.embedding_dim, Config.hidden_size, num_layers=1, batch_first=True, bias=True, dropout=Config.dropout, bidirectional=True)
+        self.linear = torch.nn.Linear(Config.hidden_size*4, num_labels)
+        self.loss = torch.nn.CrossEntropyLoss()
+        self.pred = torch.nn.Softmax()
+
+        self.h0 = Variable(torch.zeros(2,Config.batch_size, Config.hidden_size))
+        self.c0 = Variable(torch.zeros(2,Config.batch_size, Config.hidden_size))
+        self.h1 = Variable(torch.zeros(2,Config.batch_size, Config.hidden_size))
+        self.c1 = Variable(torch.zeros(2,Config.batch_size, Config.hidden_size))
+
+        if Config.cuda:
+            self.h0 = self.h0.cuda()
+            self.c0 = self.c0.cuda()
+            self.h1 = self.h1.cuda()
+            self.c1 = self.c1.cuda()
+
+    def forward(self, str2var):
+        inp = str2var['input']
+        sup = str2var['support']
+        l1 = str2var['input_length']
+        l2 = str2var['support_length']
+        t = str2var['target']
+        self.h0.data.zero_()
+        self.c0.data.zero_()
+
+        inp_seq = self.emb(inp)
+        sup_seq = self.emb(sup)
+
+        out1, hid1 = self.lstm1(inp_seq, (self.h0, self.c0))
+        out2, hid2 = self.lstm2(sup_seq, hid1)
+
+        outs1 = []
+        outs2 = []
+        for i in range(Config.batch_size):
+            outs1.append(out1[i,l1.data[i]-1, :])
+            outs2.append(out2[i,l2.data[i]-1, :])
+
+        out1_stacked = torch.stack(outs1, 0)
+        out2_stacked = torch.stack(outs2, 0)
+        out = torch.cat([out1_stacked, out2_stacked], 1)
+        projected = self.linear(out)
+        loss = self.loss(projected, t)
+        max_values, argmax = torch.topk(self.pred(projected),1)
+        return loss, argmax
+
 
 def download_snli():
     '''Creates data and snli paths and downloads SNLI in the home dir'''
@@ -183,22 +237,40 @@ def main():
     dev_batcher = StreamBatcher('snli_example', 'snli_dev', batch_size)
     test_batcher  = StreamBatcher('snli_example', 'snli_test', batch_size)
 
-    train_batcher.subscribe_to_events(AccuracyHook('Train', print_every_x_batches=1000))
-    dev_batcher.subscribe_to_events(AccuracyHook('Dev', print_every_x_batches=1000))
-    eta = ETAHook(print_every_x_batches=1000)
+    #train_batcher.subscribe_to_events(AccuracyHook('Train', print_every_x_batches=1000))
+    train_batcher.subscribe_to_events(LossHook('Train', print_every_x_batches=100))
+    train_batcher.subscribe_to_events(AccuracyHook('Train', print_every_x_batches=100))
+    dev_batcher.subscribe_to_events(AccuracyHook('Dev', print_every_x_batches=100))
+    dev_batcher.subscribe_to_events(LossHook('Dev', print_every_x_batches=100))
+    eta = ETAHook(print_every_x_batches=100)
     train_batcher.subscribe_to_events(eta)
     train_batcher.subscribe_to_start_of_epoch_event(eta)
 
-    model = Model()
-    model.add(Embedding(128, vocab.num_embeddings))
-    model.add(PairedBiDirectionalLSTM(128, hidden_size=256, variable_length=True, conditional_encoding=False))
-    model.add(SoftmaxCrossEntropy(input_size=256*4, num_labels=3))
+    net = Net(vocab.num_embeddings, vocab.num_labels)
+    if Config.cuda:
+        net.cuda()
 
+    epochs = 10
+    opt = torch.optim.Adam(net.parameters(), lr=0.001)
+    net.train()
+    for epoch in range(epochs):
+        for str2var in train_batcher:
+            opt.zero_grad()
+            loss, argmax = net(str2var)
+            loss.backward()
+            opt.step()
+            train_batcher.state.loss = loss
+            train_batcher.state.targets = str2var['target']
+            train_batcher.state.argmax = argmax
 
-    t = Trainer(model)
-    for i in range(10):
-        t.train(train_batcher, epochs=1)
-        t.evaluate(dev_batcher)
+    net.eval()
+    for i, str2var in enumerate(dev_batcher):
+        t = str2var['target']
+        idx = str2var['index']
+        loss, argmax = net(str2var)
+        dev_batcher.state.loss = loss
+        dev_batcher.state.targets = str2var['target']
+        dev_batcher.state.argmax = argmax
 
 
 if __name__ == '__main__':

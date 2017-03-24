@@ -125,7 +125,7 @@ class PairedBiDirectionalLSTM(object):
         elif Config.backend == Backends.TORCH:
             from spodernet.backends.torchmodels import TorchPairedBiDirectionalLSTM, TorchVariableLengthOutputSelection
             model = Model()
-            model.add(TorchPairedBiDirectionalLSTM(input_size, hidden_size))
+            model.add(TorchPairedBiDirectionalLSTM(input_size, hidden_size, conditional_encoding=conditional_encoding))
             model.add(TorchVariableLengthOutputSelection())
 
             self.module = model
