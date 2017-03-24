@@ -80,7 +80,7 @@ class AbstractHook(IAtIterEndObservable, IAtEpochEndObservable):
 
     def print_statistic(self, at_epoch_end=False):
         n, lower, m, upper = self.get_confidence_intervals()
-        str_message = '{3} {4}: {2:.3}\t99% CI: ({0:.3}, {1:.3}), n={5}'.format(lower, upper, m, self.name, self.metric_name, self.n)
+        str_message = '{3} {4}: {2:.5}\t99% CI: ({0:.5}, {1:.5}), n={5}'.format(lower, upper, m, self.name, self.metric_name, self.n)
         if at_epoch_end: log.info('\n')
         if at_epoch_end: log.info('#'*40)
         if at_epoch_end: log.info(' '*10 + 'COMPLETED EPOCH: {0}'.format(self.epoch) + ' '*30)

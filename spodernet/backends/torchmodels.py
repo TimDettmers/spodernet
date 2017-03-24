@@ -44,8 +44,8 @@ class TorchBiDirectionalLSTM(torch.nn.Module, AbstractModel):
         self.h0 = None
         self.c0 = None
 
-        self.h0 = Variable(torch.FloatTensor(input_size, Config.batch_size, hidden_size))
-        self.c0 = Variable(torch.FloatTensor(input_size, Config.batch_size, hidden_size))
+        self.h0 = Variable(torch.FloatTensor(num_directions*layers, Config.batch_size, hidden_size))
+        self.c0 = Variable(torch.FloatTensor(num_directions*layers, Config.batch_size, hidden_size))
 
         if Config.cuda:
             self.h0 = self.h0.cuda()
@@ -73,9 +73,9 @@ class TorchPairedBiDirectionalLSTM(torch.nn.Module, AbstractModel):
 
         self.conditional_encoding = conditional_encoding
         self.lstm1 = LSTM(input_size,hidden_size,layers,
-                         use_bias,True,0.2,bidirectional)
+                         use_bias,True,0.0,bidirectional)
         self.lstm2 = LSTM(input_size,hidden_size,layers,
-                         use_bias,True,0.2,bidirectional)
+                         use_bias,True,0.0,bidirectional)
 
         # states of both LSTMs
         self.h01 = None
@@ -84,16 +84,16 @@ class TorchPairedBiDirectionalLSTM(torch.nn.Module, AbstractModel):
         self.c02 = None
 
 
-        self.h01 = Variable(torch.FloatTensor(input_size, Config.batch_size, hidden_size))
-        self.c01 = Variable(torch.FloatTensor(input_size, Config.batch_size, hidden_size))
+        self.h01 = Variable(torch.FloatTensor(num_directions*layers, Config.batch_size, hidden_size))
+        self.c01 = Variable(torch.FloatTensor(num_directions*layers, Config.batch_size, hidden_size))
 
         if Config.cuda:
             self.h01 = self.h01.cuda()
             self.c01 = self.c01.cuda()
 
         if not self.conditional_encoding:
-            self.h02 = Variable(torch.FloatTensor(input_size, Config.batch_size, hidden_size))
-            self.c02 = Variable(torch.FloatTensor(input_size, Config.batch_size, hidden_size))
+            self.h02 = Variable(torch.FloatTensor(num_directions*layers, Config.batch_size, hidden_size))
+            self.c02 = Variable(torch.FloatTensor(num_directions*layers, Config.batch_size, hidden_size))
 
             if to_cuda:
                 self.h02 = self.h02.cuda()

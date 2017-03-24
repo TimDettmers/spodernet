@@ -12,7 +12,7 @@ import sys
 from spodernet.hooks import AccuracyHook, LossHook, ETAHook
 from spodernet.preprocessing.pipeline import Pipeline
 from spodernet.preprocessing.processors import AddToVocab, CreateBinsByNestedLength, SaveLengthsToState, ConvertTokenToIdx, StreamToHDF5, Tokenizer, NaiveNCharTokenizer
-from spodernet.preprocessing.processors import JsonLoaderProcessors, DictKey2ListMapper, RemoveLineOnJsonValueCondition
+from spodernet.preprocessing.processors import JsonLoaderProcessors, DictKey2ListMapper, RemoveLineOnJsonValueCondition, ToLower
 from spodernet.preprocessing.batching import StreamBatcher
 from spodernet.utils.logger import Logger, LogLevel
 from spodernet.utils.global_config import Config, Backends
@@ -95,6 +95,7 @@ def preprocess_SNLI(delete_data=False):
     p.add_line_processor(JsonLoaderProcessors())
     p.add_line_processor(RemoveLineOnJsonValueCondition('gold_label', lambda label: label == '-'))
     p.add_line_processor(DictKey2ListMapper(['sentence1', 'sentence2', 'gold_label']))
+    p.add_sent_processor(ToLower())
     p.add_sent_processor(Tokenizer(tokenizer.tokenize), t)
     #p.add_sent_processor(NaiveNCharTokenizer(3), not_t)
     p.add_token_processor(AddToVocab())
@@ -104,6 +105,7 @@ def preprocess_SNLI(delete_data=False):
     p.state['vocab'].save_to_disk()
 
     # 2. Process the data further to stream it to hdf5
+    p.add_sent_processor(ToLower())
     p.add_sent_processor(Tokenizer(tokenizer.tokenize), t)
     #p.add_sent_processor(NaiveNCharTokenizer(3), not_t)
     p.add_post_processor(ConvertTokenToIdx())
@@ -117,12 +119,14 @@ def preprocess_SNLI(delete_data=False):
     p2.add_line_processor(JsonLoaderProcessors())
     p2.add_line_processor(RemoveLineOnJsonValueCondition('gold_label', lambda label: label == '-'))
     p2.add_line_processor(DictKey2ListMapper(['sentence1', 'sentence2', 'gold_label']))
+    p2.add_sent_processor(ToLower())
     p2.add_sent_processor(Tokenizer(tokenizer.tokenize), t)
     #p2.add_sent_processor(NaiveNCharTokenizer(3), not_t)
     p2.add_post_processor(SaveLengthsToState())
     p2.execute()
 
     p2.clear_processors()
+    p2.add_sent_processor(ToLower())
     p2.add_sent_processor(Tokenizer(tokenizer.tokenize), t)
     #p2.add_sent_processor(NaiveNCharTokenizer(3), not_t)
     p2.add_post_processor(ConvertTokenToIdx())
@@ -135,12 +139,14 @@ def preprocess_SNLI(delete_data=False):
     p3.add_line_processor(JsonLoaderProcessors())
     p3.add_line_processor(RemoveLineOnJsonValueCondition('gold_label', lambda label: label == '-'))
     p3.add_line_processor(DictKey2ListMapper(['sentence1', 'sentence2', 'gold_label']))
+    p3.add_sent_processor(ToLower())
     p3.add_sent_processor(Tokenizer(tokenizer.tokenize), t)
     #p3.add_sent_processor(NaiveNCharTokenizer(3), not_t)
     p3.add_post_processor(SaveLengthsToState())
     p3.execute()
 
     p3.clear_processors()
+    p3.add_sent_processor(ToLower())
     p3.add_sent_processor(Tokenizer(tokenizer.tokenize), t)
     #p3.add_sent_processor(NaiveNCharTokenizer(3), not_t)
     p3.add_post_processor(ConvertTokenToIdx())
@@ -151,10 +157,10 @@ def preprocess_SNLI(delete_data=False):
 
 def main():
     Logger.GLOBAL_LOG_LEVEL = LogLevel.INFO
-    Config.backend = Backends.TENSORFLOW
-    #Config.backend = Backends.TORCH
+    #Config.backend = Backends.TENSORFLOW
+    Config.backend = Backends.TORCH
     Config.cuda = True
-    Config.dropout = 0.2
+    Config.dropout = 0.0
     print(Config.L2)
     Config.L2 = 0.0001
     print(Config.L2)
@@ -174,7 +180,6 @@ def main():
         TensorFlowConfig.init_batch_size(batch_size)
     train_batcher = StreamBatcher('snli_example', 'snli_train', batch_size, randomize=True, loader_threads=8)
     #train_batcher.subscribe_to_batch_prepared_event(SomeExpensivePreprocessing())
-    train_batcher_error = StreamBatcher('snli_example', 'snli_train', batch_size, randomize=True, loader_threads=8, seed=2345)
     dev_batcher = StreamBatcher('snli_example', 'snli_dev', batch_size)
     test_batcher  = StreamBatcher('snli_example', 'snli_test', batch_size)
 
