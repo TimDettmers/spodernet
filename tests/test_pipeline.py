@@ -480,6 +480,33 @@ def test_convert_token_to_idx_no_sentences():
         # sent[0] = idx
         assert idx1 == sample[0][0], 'Index for label differs!'
 
+
+def test_convert_to_idx_with_separate_vocabs():
+
+    # 1. write test data
+    file_path = join(get_data_path(), 'test_pipeline', 'test_data.json')
+    with open(file_path, 'wb') as f:
+        f.write(json.dumps(['0', 'a','-']) + '\n')
+        f.write(json.dumps(['1', 'b','&']) + '\n')
+        f.write(json.dumps(['2', 'c','#']) + '\n')
+
+    # 2. read test data with pipeline
+    p = Pipeline('test_pipeline')
+
+    p.add_path(file_path)
+    p.add_line_processor(JsonLoaderProcessors())
+    p.add_token_processor(AddToVocab())
+    p.add_post_processor(ConvertTokenToIdx(keys=['input', 'support']))
+    p.add_post_processor(SaveStateToList('idx'))
+    state = p.execute()
+
+    inp_indices = state['data']['idx']['input']
+    sup_indices = state['data']['idx']['input']
+
+    # 0 = UNK, 1 = '', 2,3,4 -> max index is 4
+    assert np.max(inp_indices) == 2 + 2, 'Max idx should have been 2 if the vocabularies were separates!'
+    assert np.max(sup_indices) == 2 + 2, 'Max idx should have been 2 if the vocabularies were separates!'
+
 def test_save_lengths():
     tokenizer = nltk.tokenize.WordPunctTokenizer()
 
