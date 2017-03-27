@@ -168,7 +168,7 @@ def preprocess_SNLI(delete_data=False):
 
     # dev and test data
     p2 = Pipeline('snli_example')
-    p2.add_vocab(p)
+    p2.copy_vocab_from_pipeline(p)
     p2.add_path(join(zip_path, file_paths[1]))
     p2.add_line_processor(JsonLoaderProcessors())
     p2.add_line_processor(RemoveLineOnJsonValueCondition('gold_label', lambda label: label == '-'))
@@ -188,7 +188,7 @@ def preprocess_SNLI(delete_data=False):
     p2.execute()
 
     p3 = Pipeline('snli_example')
-    p3.add_vocab(p)
+    p3.copy_vocab_from_pipeline(p)
     p3.add_path(join(zip_path, file_paths[2]))
     p3.add_line_processor(JsonLoaderProcessors())
     p3.add_line_processor(RemoveLineOnJsonValueCondition('gold_label', lambda label: label == '-'))

@@ -199,7 +199,7 @@ def test_vocab():
 
 
     # 3. Compare vocabs
-    v2 = state['vocab']
+    v2 = state['vocab']['general']
     for token in v.token2idx:
         assert v.token2idx[token] == v2.token2idx[token], 'Index for token not the same!'
         assert v.token2idx[token] == token2idx[token], 'Index for token not the same!'
@@ -214,6 +214,51 @@ def test_vocab():
 
     for idx in v.idx2label:
         assert v.idx2label[idx] == v2.idx2label[idx], 'Label for index not the same!'
+
+
+def test_separate_vocabs():
+
+    # 1. write test data
+    file_path = join(get_data_path(), 'test_pipeline', 'test_data.json')
+    with open(file_path, 'wb') as f:
+        f.write(json.dumps(['0', 'a','-']) + '\n')
+        f.write(json.dumps(['1', 'b','&']) + '\n')
+        f.write(json.dumps(['2', 'c','#']) + '\n')
+
+    # 2. read test data with pipeline
+    p = Pipeline('test_pipeline')
+
+    p.add_path(file_path)
+    p.add_line_processor(JsonLoaderProcessors())
+    p.add_token_processor(AddToVocab())
+    state = p.execute()
+    vocab = state['vocab']['general']
+    inp_vocab = state['vocab']['input']
+    sup_vocab = state['vocab']['support']
+    tar_vocab = state['vocab']['target']
+
+    # 6 token + empty and unknown = 8 
+    assert vocab.num_token == 6 + 2, 'General vocab token count should be 8, but was {0} instead.'.format(vocab.num_token)
+    assert vocab.num_labels == 3, 'General vocab token count should be 3, but was {0} instead.'.format(vocab.num_labels)
+
+    assert inp_vocab.num_token == 3 + 2, 'General vocab token count should be 5, but was {0} instead.'.format(inp_vocab.num_token)
+    assert inp_vocab.num_labels == 0, 'General vocab token count should be 0, but was {0} instead.'.format(inp_vocab.num_labels)
+    assert sup_vocab.num_token == 3 + 2, 'General vocab token count should be 5, but was {0} instead.'.format(sup_vocab.num_token)
+    assert sup_vocab.num_labels == 0, 'General vocab token count should be 0, but was {0} instead.'.format(sup_vocab.num_labels)
+    assert tar_vocab.num_token == 3 + 2, 'General vocab token count should be 5, but was {0} instead.'.format(tar_vocab.num_token)
+    assert tar_vocab.num_labels == 0, 'General vocab token count should be 0, but was {0} instead.'.format(tar_vocab.num_labels)
+
+    for token in ['0', '1', '2']:
+        assert token in vocab.token2idx, 'Token {0} not found in the vocabulary when it should have been there!'.format(token)
+        assert token in inp_vocab.token2idx, 'Token {0} not found in the vocabulary when it should have been there!'.format(token)
+
+    for token in ['a', 'b', 'c']:
+        assert token in vocab.token2idx, 'Token {0} not found in the vocabulary when it should have been there!'.format(token)
+        assert token in sup_vocab.token2idx, 'Token {0} not found in the vocabulary when it should have been there!'.format(token)
+
+    for token in ['-', '&', '#']:
+        assert token in vocab.label2idx, 'Token {0} not found in the vocabulary when it should have been there!'.format(token)
+        assert token in tar_vocab.token2idx, 'Token {0} not found in the vocabulary when it should have been there!'.format(token)
 
 
 def test_to_lower_sent():
