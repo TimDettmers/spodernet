@@ -203,7 +203,7 @@ class ConvertTokenToIdx(AbstractLoopLevelTokenProcessor):
 
     def process_token(self, token, inp_type):
         if not self.keys is None and inp_type in self.keys:
-            self.state['vocab'][inp_type].get_idx(token)
+            return self.state['vocab'][inp_type].get_idx(token)
         else:
             if inp_type != 'target':
                 log.statistical('a non-label token {0}', 0.00001, token)
