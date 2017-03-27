@@ -180,12 +180,13 @@ class AddToVocab(AbstractProcessor):
 
     def process(self, token, inp_type):
         if inp_type == 'target':
-            self.state['vocab'].add_label(token)
+            self.state['vocab']['general'].add_label(token)
             log.statistical('Example vocab target token {0}', 0.01, token)
         else:
-            self.state['vocab'].add_token(token)
+            self.state['vocab']['general'].add_token(token)
             message = 'Example vocab {0} token'.format(inp_type)
             log.statistical(message + ': {0}', 0.01, token)
+        self.state['vocab'][inp_type].add_token(token)
         return token
 
 class ToLower(AbstractProcessor):
@@ -196,16 +197,20 @@ class ToLower(AbstractProcessor):
         return token.lower()
 
 class ConvertTokenToIdx(AbstractLoopLevelTokenProcessor):
-    def __init__(self):
+    def __init__(self, keys=None):
         super(ConvertTokenToIdx, self).__init__()
+        self.keys = keys
 
     def process_token(self, token, inp_type):
-        if inp_type != 'target':
-            log.statistical('a non-label token {0}', 0.00001, token)
-            return self.state['vocab'].get_idx(token)
+        if not self.keys is None and inp_type in self.keys:
+            self.state['vocab'][inp_type].get_idx(token)
         else:
-            log.statistical('a token {0}', 0.00001, token)
-            return self.state['vocab'].get_idx_label(token)
+            if inp_type != 'target':
+                log.statistical('a non-label token {0}', 0.00001, token)
+                return self.state['vocab']['general'].get_idx(token)
+            else:
+                log.statistical('a token {0}', 0.00001, token)
+                return self.state['vocab']['general'].get_idx_label(token)
 
 class SaveStateToList(AbstractProcessor):
     def __init__(self, name):

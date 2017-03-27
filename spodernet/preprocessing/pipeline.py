@@ -33,7 +33,11 @@ class Pipeline(object):
                 log.warning('Pipeline path {0} already exist. This pipeline may overwrite data in this path!', self.root)
 
         self.state = {'name' : name, 'home' : home, 'path' : self.root, 'data' : {}}
-        self.state['vocab'] = Vocab(path=join(self.root, 'vocab'))
+        self.state['vocab'] = {}
+        self.state['vocab']['general'] = Vocab(path=join(self.root, 'vocab'))
+        self.state['vocab']['input'] = Vocab(path=join(self.root, 'vocab_input'))
+        self.state['vocab']['support'] = Vocab(path=join(self.root, 'vocab_support'))
+        self.state['vocab']['target'] = Vocab(path=join(self.root, 'vocab_target'))
 
     def add_line_processor(self, line_processor):
         self.line_processors.append(line_processor)
@@ -98,11 +102,14 @@ class Pipeline(object):
     def clear_paths(self):
         self.paths = []
 
-    def add_vocab(self, pipeline_or_vocab):
+    def copy_vocab_from_pipeline(self, pipeline_or_vocab, vocab_type=None):
         if isinstance(pipeline_or_vocab, Pipeline):
             self.state['vocab'] = pipeline_or_vocab.state['vocab']
         elif isinstance(pipeline_or_vocab, Vocab):
-            self.state['vocab'] = pipeline_or_vocab
+            if vocab_type is None:
+                self.state['vocab']['general'] = pipeline_or_vocab
+            else:
+                self.state['vocab'][vocab_type] = pipeline_or_vocab
         else:
             str_error = 'The add vocab method expects a Pipeline or Vocab instance as argument, got {0} instead!'.format(type(pipeline_or_vocab))
             log.error(str_error)
