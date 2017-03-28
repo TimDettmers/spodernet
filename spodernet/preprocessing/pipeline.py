@@ -102,6 +102,18 @@ class Pipeline(object):
     def clear_paths(self):
         self.paths = []
 
+    def save_vocabs(self):
+        self.state['vocab']['general'].save_to_disk()
+        self.state['vocab']['input'].save_to_disk()
+        self.state['vocab']['support'].save_to_disk()
+        self.state['vocab']['target'].save_to_disk()
+
+    def load_vocabs(self):
+        self.state['vocab']['general'].load_from_disk()
+        self.state['vocab']['input'].load_from_disk()
+        self.state['vocab']['support'].load_from_disk()
+        self.state['vocab']['target'].load_from_disk()
+
     def copy_vocab_from_pipeline(self, pipeline_or_vocab, vocab_type=None):
         if isinstance(pipeline_or_vocab, Pipeline):
             self.state['vocab'] = pipeline_or_vocab.state['vocab']

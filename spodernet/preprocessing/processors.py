@@ -39,7 +39,7 @@ class TargetIdx2MultiTarget(IAtBatchPreparedObservable):
                 for col in row:
                     new_t[i, col] = 1
 
-        return [inp, inp_len, sup, sup_len, new_t, idx]
+        return [inp, inp_len, sup, sup_len, t, idx, new_t]
 
 class ListIndexRemapper(object):
     def __init__(self, list_of_new_idx):
@@ -267,8 +267,8 @@ class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
 
     def init_and_checks(self):
         if 'lengths' not in self.state['data']:
-            log.error(('Do a first pass to produce lengths first, that is use the "SaveLengths" ',
-                       'processor, execute, clean processors, then rerun the pipeline with hdf5 streaming.'))
+            log.error('Do a first pass to produce lengths first, that is use the "SaveLengths" ' \
+                       'processor, execute, clean processors, then rerun the pipeline with hdf5 streaming.')
         if self.num_samples == None:
             self.num_samples = len(self.state['data']['lengths']['input'])
         log.debug('Using type int32 for inputs and supports for now, but this may not be correct in the future')
@@ -287,10 +287,12 @@ class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
             log.statistical('max length of the dataset: {0}', 0.0001, max_length)
         x = np.zeros((self.max_lengths[inp_type]), dtype=np.int32)
         x[:len(tokens)] = tokens
-        if len(tokens) == 1 and inp_type == 'target':
+        if len(tokens) == 1 and inp_type == 'target' and self.max_lengths[inp_type] == 1:
             self.data[inp_type].append(x[0])
+            log.debug_once('Adding one dimensional data for type ' + inp_type + ': {0}', x[0])
         else:
             self.data[inp_type].append(x.tolist())
+            log.debug_once('Adding list data for type ' + inp_type + ': {0}', x.tolist())
         if inp_type == 'target':
             self.data['index'].append(self.idx)
             self.idx += 1
@@ -333,7 +335,7 @@ class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
 
         if inp_type == 'input':
             self.shuffle_idx = np.arange(X.shape[0])
-            np.random.shuffle(self.shuffle_idx)
+            log.debug_once('First row of input data with shape {1} written to hdf5: {0}', X[0], X.shape)
             #X = X[self.shuffle_idx]
         log.debug('Writing hdf5 file for input type {0} to disk. Using index {1} and path {2}', inp_type, idx, join(self.base_path, file_name))
         log.debug('Writing hdf5 data. One sample row: {0}, shape: {1}, type: {2}', X[0], X.shape, X.dtype)

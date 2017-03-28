@@ -111,6 +111,31 @@ class AccuracyHook(AbstractHook):
         else:
             raise Exception('Backend has unsupported value {0}'.format(Config.backend))
 
+class TopKSoftmaxRankingLoss(AbstractHook):
+    def __init__(self, k, name='', print_every_x_batches=1000):
+        super(TopKSoftmaxRankingLoss, self).__init__(name, '{0}-Ranking loss'.format(k), print_every_x_batches)
+        self.func = None
+        self.argsort = None
+        self.sum_func = None
+        self.k = k
+        if Config.backend == Backends.TORCH:
+            import torch
+            self.argsort = lambda x, k: torch.topk(x, k)
+            self.sum_func = lambda x: torch.sum(x)
+
+
+    def calculate_metric(self, state):
+        if Config.backend == Backends.TORCH:
+            max_values, argmax = self.argsort(state.pred, self.k)
+            in_topk = 0
+            for i in range(self.k):
+                in_topk += self.sum_func(argmax[:,i] == state.targets)
+            n = state.pred.size()[0]
+            return in_topk/np.float32(n)
+        else:
+            raise Exception('Backend has unsupported value {0}'.format(Config.backend))
+
+
 class LossHook(AbstractHook):
     def __init__(self, name='', print_every_x_batches=1000):
         super(LossHook, self).__init__(name, 'Loss', print_every_x_batches)
