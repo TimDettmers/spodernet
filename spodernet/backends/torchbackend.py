@@ -11,54 +11,32 @@ from spodernet.utils.global_config import Config
 
 class TorchConverter(IAtBatchPreparedObservable):
     def at_batch_prepared(self, batch_parts):
-        inp, inp_len, sup, sup_len, t, idx = batch_parts
-        inp = Variable(torch.from_numpy(np.int64(inp)))
-        inp_len = Variable(torch.IntTensor(inp_len))
-        sup = Variable(torch.from_numpy(np.int64(sup)))
-        sup_len = Variable(torch.from_numpy(sup_len))
-        t = Variable(torch.from_numpy(np.int64(t)))
-
-        return [inp, inp_len, sup, sup_len, t, idx]
-
-
-class TorchConverter(IAtBatchPreparedObservable):
-    def at_batch_prepared(self, batch_parts):
-        inp, inp_len, sup, sup_len, t, idx = batch_parts
-        inp = Variable(torch.from_numpy(np.int64(inp)))
-        inp_len = Variable(torch.IntTensor(inp_len))
-        sup = Variable(torch.from_numpy(np.int64(sup)))
-        sup_len = Variable(torch.from_numpy(sup_len))
-        t = Variable(torch.from_numpy(np.int64(t)))
-
-        return [inp, inp_len, sup, sup_len, t, idx]
+        for i in range(len(batch_parts)):
+            batch_parts[i] = Variable(torch.from_numpy(np.int64(batch_parts[i])))
+        return batch_parts
 
 class TorchCUDAConverter(IAtBatchPreparedObservable):
     def __init__(self, device_id):
         self.device_id = device_id
 
     def at_batch_prepared(self, batch_parts):
-        inp, inp_len, sup, sup_len, t, idx = batch_parts
-        inp = inp.cuda(self.device_id, True)
-        inp_len = inp_len.cuda(self.device_id, True)
-        sup = sup.cuda(self.device_id, True)
-        sup_len = sup_len.cuda(self.device_id)
-        t = t.cuda(self.device_id)
-        idx = idx
-
-        return [inp, inp_len, sup, sup_len, t, idx]
+        for i in range(len(batch_parts)):
+            batch_parts[i] = batch_parts[i].cuda(self.device_id, True)
+        return batch_parts
 
 
 class TorchDictConverter(IAtBatchPreparedObservable):
     def at_batch_prepared(self, batch_parts):
-        inp, inp_len, sup, sup_len, t, idx = batch_parts
-
         str2var = {}
-        str2var['input'] = inp
-        str2var['input_length'] = inp_len
-        str2var['support'] = sup
-        str2var['support_length'] = sup_len
-        str2var['target'] = t
-        str2var['index'] = idx
+        str2var['input'] = batch_parts[0]
+        str2var['input_length'] = batch_parts[1]
+        str2var['support'] = batch_parts[2]
+        str2var['support_length'] = batch_parts[3]
+        str2var['target'] = batch_parts[4]
+        str2var['index'] = batch_parts[5]
+        if len(batch_parts) > 6:
+            for i in range(6,len(batch_parts)):
+                str2var['var{0}'.format(i-6)] = batch_parts[i]
 
         return str2var
 
