@@ -111,7 +111,37 @@ class AccuracyHook(AbstractHook):
         else:
             raise Exception('Backend has unsupported value {0}'.format(Config.backend))
 
-class TopKSoftmaxRankingLoss(AbstractHook):
+class TopKRankingLoss(AbstractHook):
+    def __init__(self, k, name='', print_every_x_batches=1000, filtered=False):
+        super(TopKSoftmaxRankingLoss, self).__init__(name, '{1} Hits@{0} loss'.format(k, ('' if not filtered else 'Filtered')), print_every_x_batches)
+        self.func = None
+        self.argsort = None
+        self.sum_func = None
+        self.k = k
+        self.filtered = filtered
+        if Config.backend == Backends.TORCH:
+            import torch
+            self.argsort = lambda x, k: torch.topk(x, k)
+            self.sum_func = lambda x: torch.sum(x)
+
+
+    def calculate_metric(self, state):
+        if Config.backend == Backends.TORCH:
+            if self.filtered:
+                saved = torch.index_select(state.pred,1,state.targets)
+                state.pred[state.multi_labels.byte()] = 0.0
+                state.pred.index_copy_(1, state.targets, saved)
+
+            max_values, argmax = self.argsort(state.pred, self.k)
+            in_topk = 0
+            for i in range(self.k):
+                in_topk += self.sum_func(argmax[:,i] == state.targets)
+            n = state.pred.size()[0]
+            return in_topk/np.float32(n)
+        else:
+            raise Exception('Backend has unsupported value {0}'.format(Config.backend))
+
+class FilteredTopKRankingLoss(AbstractHook):
     def __init__(self, k, name='', print_every_x_batches=1000):
         super(TopKSoftmaxRankingLoss, self).__init__(name, '{0}-Ranking loss'.format(k), print_every_x_batches)
         self.func = None
@@ -126,6 +156,8 @@ class TopKSoftmaxRankingLoss(AbstractHook):
 
     def calculate_metric(self, state):
         if Config.backend == Backends.TORCH:
+            state.targets
+            state.multi_labels
             max_values, argmax = self.argsort(state.pred, self.k)
             in_topk = 0
             for i in range(self.k):
