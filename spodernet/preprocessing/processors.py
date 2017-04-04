@@ -8,6 +8,7 @@ import simplejson
 from spodernet.utils.util import get_data_path, write_to_hdf, make_dirs_if_not_exists, load_hdf_file
 from spodernet.interfaces import IAtBatchPreparedObservable
 from spodernet.utils.global_config import Config
+from diskhash.core import NumpyTable
 
 from spodernet.utils.logger import Logger
 log = Logger('processors.py.txt')
@@ -88,6 +89,9 @@ class AbstractProcessor(object):
 
     def process(self, inputs, inp_type):
         raise NotImplementedError('Classes that inherit from AbstractProcessor need to implement the process method')
+
+    def post_process(self, inp_type):
+        pass
 
 
 class AbstractLoopLevelTokenProcessor(AbstractProcessor):
@@ -243,6 +247,33 @@ class SaveLengthsToState(AbstractLoopLevelListOfTokensProcessor):
         log.statistical('A list of tokens: {0}', 0.0001, tokens)
         log.debug_once('Pipeline {1}: A list of tokens: {0}', tokens, self.state['name'])
         return tokens
+
+class StreamToNumpyTable(AbstractLoopLevelListOfTokensProcessor):
+    def __init__(self, name, key_to_index_func_tuple = None):
+        super(StreamToNumpyTable, self).__init__()
+        self.tbls = {}
+        self.name = name
+        self.key_to_index_func_tuple = key_to_index_func_tuple
+
+    def link_with_pipeline(self, state):
+        self.state = state
+        self.base_path = join(self.state['path'], self.name)
+        make_dirs_if_not_exists(self.base_path)
+
+    def process_list_of_tokens(self, tokens, inp_type):
+        if inp_type not in self.tbls:
+            tbl = NumpyTable(self.name  + '_' + inp_type, fixed_length=False)
+            tbl.init()
+            self.tbls[inp_type] = tbl
+            if self.key_to_index_func_tuple is not None:
+                if inp_type in self.key_to_name_index_func_tuple:
+                    tbl.add_index(*self.key_to_index_func_tuple[inp_type])
+
+        tbl = self.tbls[inp_type]
+        tbl.append(np.array(tokens))
+
+    def post_process(self, inp_type):
+        self.tbls[inp_type].write_index()
 
 class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
     def __init__(self, name, samples_per_file=50000):

@@ -184,4 +184,10 @@ class Pipeline(object):
                     if 'target' in keys:
                         t_words = postp.process(t_words, inp_type='target')
 
+        for inp_type in ['input', 'support', 'target']:
+            for keys, textp in self.text_processors: textp.post_process(inp_type)
+            for keys, sentp in self.sent_processors: sentp.post_process(inp_type)
+            for keys, tokenp in self.token_processors: tokenp.post_process(inp_type)
+            for keys, postp in self.post_processors: postp.post_process(inp_type)
+
         return self.state

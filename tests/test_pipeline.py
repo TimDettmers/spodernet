@@ -12,16 +12,19 @@ import cPickle as pickle
 import itertools
 import scipy.stats
 from io import StringIO
+import dill
 
 from spodernet.preprocessing.pipeline import Pipeline
 from spodernet.preprocessing.processors import Tokenizer, SaveStateToList, AddToVocab, ToLower, ConvertTokenToIdx, SaveLengthsToState
 from spodernet.preprocessing.processors import JsonLoaderProcessors, RemoveLineOnJsonValueCondition, DictKey2ListMapper
-from spodernet.preprocessing.processors import StreamToHDF5, CreateBinsByNestedLength
+from spodernet.preprocessing.processors import StreamToHDF5, CreateBinsByNestedLength, StreamToNumpyTable
 from spodernet.preprocessing.vocab import Vocab
 from spodernet.preprocessing.batching import StreamBatcher, BatcherState
 from spodernet.utils.util import get_data_path, load_hdf_file
 from spodernet.utils.global_config import Config, Backends
 from spodernet.hooks import LossHook, AccuracyHook, ETAHook
+
+from diskhash.core import NumpyTable
 
 from spodernet.utils.logger import Logger, LogLevel
 log = Logger('test_pipeline.py.txt')
@@ -627,7 +630,6 @@ def test_stream_to_hdf5():
     X_len = X_len[index]
     S_len = S_len[index]
     zip_iter = zip([X, S, t, X_len, S_len], [inp_paths, sup_paths, target_paths, inp_len_paths, sup_len_paths ])
-    print(index)
 
     # 5. Compare data
     for data, paths in zip_iter:
@@ -988,3 +990,82 @@ def test_hook(hook_name, print_every):
         del expected_loss[:]
 
 
+
+
+def test_stream_to_numpytable():
+    tokenizer = nltk.tokenize.WordPunctTokenizer()
+    data_folder_name = 'snli_test'
+    pipeline_folder = 'test_pipeline'
+    base_path = join(get_data_path(), pipeline_folder, data_folder_name)
+    # clean all data from previous failed tests   
+    if os.path.exists(base_path):
+        shutil.rmtree(base_path)
+
+    # 1. Setup pipeline to save lengths and generate vocabulary
+    p = Pipeline(pipeline_folder)
+    p.add_path(get_test_data_path_dict()['snli'])
+    p.add_line_processor(JsonLoaderProcessors())
+    p.add_sent_processor(Tokenizer(tokenizer.tokenize))
+    p.add_post_processor(SaveLengthsToState())
+    p.execute()
+    p.clear_processors()
+
+    # 2. Process the data further to stream it to hdf5
+    p.add_sent_processor(Tokenizer(tokenizer.tokenize))
+    p.add_token_processor(AddToVocab())
+    p.add_post_processor(ConvertTokenToIdx())
+    p.add_post_processor(SaveStateToList('idx'))
+    # 2 samples per file -> 50 files
+    streamer = StreamToNumpyTable(data_folder_name)
+    p.add_post_processor(streamer)
+    state = p.execute()
+
+    # 2. Load data from the SaveStateToList hook
+    inp_indices = state['data']['idx']['input']
+    sup_indices = state['data']['idx']['support']
+    t_indices = state['data']['idx']['target']
+    max_inp_len = np.max(state['data']['lengths']['input'])
+    max_sup_len = np.max(state['data']['lengths']['support'])
+    # For SNLI the targets consist of single words'
+    assert np.max(state['data']['lengths']['target']) == 1, 'Max index label length should be 1'
+
+    # 3. parse data to numpy
+    n = len(inp_indices)
+    X = np.zeros((n, max_inp_len), dtype=np.int64)
+    X_len = np.zeros((n), dtype=np.int64)
+    S = np.zeros((n, max_sup_len), dtype=np.int64)
+    S_len = np.zeros((n), dtype=np.int64)
+    t = np.zeros((n), dtype=np.int64)
+    index = np.zeros((n), dtype=np.int64)
+
+    for i in range(len(inp_indices)):
+        sample_inp = inp_indices[i][0]
+        sample_sup = sup_indices[i][0]
+        sample_t = t_indices[i][0]
+        l = len(sample_inp)
+        X_len[i] = l
+        X[i, :l] = sample_inp
+
+        l = len(sample_sup)
+        S_len[i] = l
+        S[i, :l] = sample_sup
+
+        t[i] = sample_t[0]
+        index[i] = i
+
+    data = [X, S, t, X_len, S_len]
+    tbls = []
+    tbls.append(NumpyTable(data_folder_name + '_input', fixed_length=False))
+    tbls.append(NumpyTable(data_folder_name + '_support', fixed_length=False))
+    tbls.append(NumpyTable(data_folder_name + '_target', fixed_length=False))
+    for tbl in tbls: tbl.init()
+    # 5. Compare data
+    for i, (var, tbl) in enumerate(zip(data, tbls)):
+        idx = range(var.shape[0])
+        print(i)
+        np.testing.assert_array_equal(tbl[idx], var.reshape(100, -1), 'NumpyTable Stream data not equal')
+
+    # 7. clean up
+    shutil.rmtree(base_path)
+    for tbl in tbls:
+        tbl.clear_table()
