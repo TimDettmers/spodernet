@@ -31,6 +31,7 @@ class BatcherState(object):
         self.targets = None
         self.num_batches = None
         self.timer = None
+        self.multi_labels = None
 
 
 class DataLoaderSlave(Thread):

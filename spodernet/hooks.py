@@ -114,8 +114,8 @@ class AccuracyHook(AbstractHook):
 
 
 class TopKRankingLoss(AbstractHook):
-    def __init__(self, k, name='', print_every_x_batches=1000, filtered=False):
-        super(TopKSoftmaxRankingLoss, self).__init__(name, '{1} Hits@{0} loss'.format(k, ('' if not filtered else 'Filtered')), print_every_x_batches)
+    def __init__(self, k, filtered=False, name='', print_every_x_batches=1000):
+        super(TopKRankingLoss, self).__init__(name, '{1}Hits@{0} loss'.format(k, ('' if not filtered else 'Filtered ')), print_every_x_batches)
         self.func = None
         self.argsort = None
         self.sum_func = None
@@ -130,8 +130,9 @@ class TopKRankingLoss(AbstractHook):
     def calculate_metric(self, state):
         if Config.backend == Backends.TORCH:
             if self.filtered:
+                import torch
                 saved = torch.index_select(state.pred,1,state.targets)
-                state.pred[state.multi_labels.byte()] = 0.0
+                state.pred[state.multi_labels.byte()] = -100000.0
                 state.pred.index_copy_(1, state.targets, saved)
 
             max_values, argmax = self.argsort(state.pred, self.k)

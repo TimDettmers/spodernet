@@ -56,6 +56,8 @@ def convert_state(state):
         state.pred = state.pred.data
     if isinstance(state.loss, Variable):
         state.loss = state.loss.data
+    if isinstance(state.multi_labels, Variable):
+        state.multi_labels = state.multi_labels.data
 
     return state
 
