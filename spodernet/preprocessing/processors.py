@@ -249,11 +249,11 @@ class SaveLengthsToState(AbstractLoopLevelListOfTokensProcessor):
         return tokens
 
 class StreamToNumpyTable(AbstractLoopLevelListOfTokensProcessor):
-    def __init__(self, name, key_to_index_func_tuple = None):
+    def __init__(self, name, calc_length_for_keys=[]):
         super(StreamToNumpyTable, self).__init__()
         self.tbls = {}
         self.name = name
-        self.key_to_index_func_tuple = key_to_index_func_tuple
+        self.calc_length_for_keys = calc_length_for_keys
 
     def link_with_pipeline(self, state):
         self.state = state
@@ -265,15 +265,19 @@ class StreamToNumpyTable(AbstractLoopLevelListOfTokensProcessor):
             tbl = NumpyTable(self.name  + '_' + inp_type, fixed_length=False)
             tbl.init()
             self.tbls[inp_type] = tbl
-            if self.key_to_index_func_tuple is not None:
-                if inp_type in self.key_to_name_index_func_tuple:
-                    tbl.add_index(*self.key_to_index_func_tuple[inp_type])
+            if inp_type in self.calc_length_for_keys:
+                self.tbls[inp_type + '_length'] = NumpyTable(self.name + '_' + inp_type + '_length', fixed_length=True)
+                self.tbls[inp_type + '_length'].init()
 
         tbl = self.tbls[inp_type]
         tbl.append(np.array(tokens))
+        if inp_type in self.calc_length_for_keys:
+            self.tbls[inp_type + '_length'].append(np.array(len(tokens)))
 
     def post_process(self, inp_type):
         self.tbls[inp_type].write_index()
+        if inp_type in self.calc_length_for_keys:
+            self.tbls[inp_type + '_length'].write_index()
 
 class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
     def __init__(self, name, samples_per_file=50000):

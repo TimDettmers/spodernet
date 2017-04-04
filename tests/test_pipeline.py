@@ -978,7 +978,6 @@ def test_hook(hook_name, print_every):
             lower, upper, m, n = hook.at_end_of_iter_event(state)
             if (i+1) % print_every == 0:
                 lower_expected, upper_expected, mean, n2 = calc_confidence_interval(expected_loss)
-                print(i, epoch)
                 assert n == n2, 'Sample size not equal!'
                 assert np.allclose(m, mean), 'Mean not equal!'
                 assert np.allclose(lower, lower_expected), 'Lower confidence bound not equal!'
@@ -1016,7 +1015,7 @@ def test_stream_to_numpytable():
     p.add_post_processor(ConvertTokenToIdx())
     p.add_post_processor(SaveStateToList('idx'))
     # 2 samples per file -> 50 files
-    streamer = StreamToNumpyTable(data_folder_name)
+    streamer = StreamToNumpyTable(data_folder_name, ['input', 'support'])
     p.add_post_processor(streamer)
     state = p.execute()
 
@@ -1058,11 +1057,12 @@ def test_stream_to_numpytable():
     tbls.append(NumpyTable(data_folder_name + '_input', fixed_length=False))
     tbls.append(NumpyTable(data_folder_name + '_support', fixed_length=False))
     tbls.append(NumpyTable(data_folder_name + '_target', fixed_length=False))
+    tbls.append(NumpyTable(data_folder_name + '_input_length', fixed_length=True))
+    tbls.append(NumpyTable(data_folder_name + '_support_length', fixed_length=True))
     for tbl in tbls: tbl.init()
     # 5. Compare data
     for i, (var, tbl) in enumerate(zip(data, tbls)):
         idx = range(var.shape[0])
-        print(i)
         np.testing.assert_array_equal(tbl[idx], var.reshape(100, -1), 'NumpyTable Stream data not equal')
 
     # 7. clean up
