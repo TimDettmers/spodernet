@@ -42,6 +42,16 @@ class TargetIdx2MultiTarget(IAtBatchPreparedObservable):
 
         return [inp, inp_len, sup, sup_len, t, idx, new_t]
 
+class RemoveUnnecessaryDimensions(IAtBatchPreparedObservable):
+    def at_batch_prepared(self, batch_parts):
+        for i in range(len(batch_parts)):
+            while batch_parts[i].shape[-1] == 1:
+                shape = list(batch_parts[i].shape)
+                del shape[-1]
+                batch_parts[i] = batch_parts[i].reshape(shape)
+
+        return batch_parts
+
 class ListIndexRemapper(object):
     def __init__(self, list_of_new_idx):
         self.list_of_new_idx = list_of_new_idx
@@ -249,11 +259,13 @@ class SaveLengthsToState(AbstractLoopLevelListOfTokensProcessor):
         return tokens
 
 class StreamToNumpyTable(AbstractLoopLevelListOfTokensProcessor):
-    def __init__(self, name, calc_length_for_keys=[]):
+    def __init__(self, name, calc_length_for_keys=[], key2dtype={}):
         super(StreamToNumpyTable, self).__init__()
         self.tbls = {}
         self.name = name
         self.calc_length_for_keys = calc_length_for_keys
+        self.key2dtype = key2dtype
+        self.config = []
 
     def link_with_pipeline(self, state):
         self.state = state
@@ -264,20 +276,32 @@ class StreamToNumpyTable(AbstractLoopLevelListOfTokensProcessor):
         if inp_type not in self.tbls:
             tbl = NumpyTable(self.name  + '_' + inp_type, fixed_length=False)
             tbl.init()
+            tbl.add_index('length', lambda x: x.shape[1])
             self.tbls[inp_type] = tbl
             if inp_type in self.calc_length_for_keys:
                 self.tbls[inp_type + '_length'] = NumpyTable(self.name + '_' + inp_type + '_length', fixed_length=True)
                 self.tbls[inp_type + '_length'].init()
+                self.tbls[inp_type + '_length'].add_index('length', lambda x: x.shape[1])
 
         tbl = self.tbls[inp_type]
-        tbl.append(np.array(tokens))
+        if inp_type in self.key2dtype:
+            tbl.append(np.array(tokens, dtype=self.key2dtype[inp_type]))
+        else:
+            tbl.append(np.array(tokens, dtype=np.int32))
         if inp_type in self.calc_length_for_keys:
-            self.tbls[inp_type + '_length'].append(np.array(len(tokens)))
+            self.tbls[inp_type + '_length'].append(np.array(len(tokens), dtype=np.int32))
 
     def post_process(self, inp_type):
         self.tbls[inp_type].write_index()
+        self.config.append([inp_type, self.tbls[inp_type].name, len(self.tbls[inp_type])])
         if inp_type in self.calc_length_for_keys:
-            self.tbls[inp_type + '_length'].write_index()
+            tbl = self.tbls[inp_type + '_length']
+            tbl.write_index()
+            self.config.append([inp_type + '_length', tbl.name, len(tbl)])
+
+        pickle.dump(self.config, open(join(self.base_path, 'tbl_config.pkl'), 'w'))
+        log.debug('Saving table config to: {0}'.format(join(self.base_path, 'tbl_config.pkl')))
+
 
 class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
     def __init__(self, name, samples_per_file=50000):
