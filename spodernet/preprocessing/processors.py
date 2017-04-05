@@ -189,7 +189,7 @@ class NaiveNCharTokenizer(AbstractProcessor):
         return [sentence[i:i+self.N] for i in range(0, len(sentence), self.N)]
 
 class AddToVocab(AbstractProcessor):
-    def __init__(self):
+    def __init__(self, label_keys=['target']):
         super(AddToVocab, self).__init__()
 
     def process(self, token, inp_type):
@@ -274,12 +274,12 @@ class StreamToNumpyTable(AbstractLoopLevelListOfTokensProcessor):
 
     def process_list_of_tokens(self, tokens, inp_type):
         if inp_type not in self.tbls:
-            tbl = NumpyTable(self.name  + '_' + inp_type, fixed_length=False)
+            tbl = NumpyTable(self.name  + '_' + inp_type, fixed_length=False, base_path=self.base_path)
             tbl.init()
             tbl.add_index('length', lambda x: x.shape[1])
             self.tbls[inp_type] = tbl
             if inp_type in self.calc_length_for_keys:
-                self.tbls[inp_type + '_length'] = NumpyTable(self.name + '_' + inp_type + '_length', fixed_length=True)
+                self.tbls[inp_type + '_length'] = NumpyTable(self.name + '_' + inp_type + '_length', fixed_length=True, base_path=self.base_path)
                 self.tbls[inp_type + '_length'].init()
                 self.tbls[inp_type + '_length'].add_index('length', lambda x: x.shape[1])
 
@@ -293,11 +293,11 @@ class StreamToNumpyTable(AbstractLoopLevelListOfTokensProcessor):
 
     def post_process(self, inp_type):
         self.tbls[inp_type].write_index()
-        self.config.append([inp_type, self.tbls[inp_type].name, len(self.tbls[inp_type])])
+        self.config.append([inp_type, self.tbls[inp_type].name, len(self.tbls[inp_type]), self.base_path])
         if inp_type in self.calc_length_for_keys:
             tbl = self.tbls[inp_type + '_length']
             tbl.write_index()
-            self.config.append([inp_type + '_length', tbl.name, len(tbl)])
+            self.config.append([inp_type + '_length', tbl.name, len(tbl), self.base_path])
 
         pickle.dump(self.config, open(join(self.base_path, 'tbl_config.pkl'), 'w'))
         log.debug('Saving table config to: {0}'.format(join(self.base_path, 'tbl_config.pkl')))

@@ -11,7 +11,7 @@ import sys
 
 from spodernet.hooks import AccuracyHook, LossHook, ETAHook
 from spodernet.preprocessing.pipeline import Pipeline
-from spodernet.preprocessing.processors import AddToVocab, CreateBinsByNestedLength, SaveLengthsToState, ConvertTokenToIdx, StreamToHDF5, Tokenizer, NaiveNCharTokenizer
+from spodernet.preprocessing.processors import AddToVocab, ConvertTokenToIdx, Tokenizer, NaiveNCharTokenizer, StreamToNumpyTable
 from spodernet.preprocessing.processors import JsonLoaderProcessors, DictKey2ListMapper, RemoveLineOnJsonValueCondition, ToLower
 from spodernet.preprocessing.batching import StreamBatcher
 from spodernet.utils.logger import Logger, LogLevel
@@ -90,30 +90,21 @@ def preprocess_SNLI(delete_data=False):
     t = ['input', 'support', 'target']
     # tokenize and convert to hdf5
     # 1. Setup pipeline to save lengths and generate vocabulary
-    p = Pipeline('snli_example', delete_data)
+    p = Pipeline('snli_example', t, delete_data)
     p.add_path(join(zip_path, file_paths[0]))
     p.add_line_processor(JsonLoaderProcessors())
     p.add_line_processor(RemoveLineOnJsonValueCondition('gold_label', lambda label: label == '-'))
     p.add_line_processor(DictKey2ListMapper(['sentence1', 'sentence2', 'gold_label']))
     p.add_sent_processor(ToLower())
     p.add_sent_processor(Tokenizer(tokenizer.tokenize), t)
-    #p.add_sent_processor(NaiveNCharTokenizer(3), not_t)
     p.add_token_processor(AddToVocab())
-    p.add_post_processor(SaveLengthsToState())
-    p.execute()
-    p.clear_processors()
-    p.state['vocab'].save_to_disk()
-
-    # 2. Process the data further to stream it to hdf5
-    p.add_sent_processor(ToLower())
-    p.add_sent_processor(Tokenizer(tokenizer.tokenize), t)
-    #p.add_sent_processor(NaiveNCharTokenizer(3), not_t)
     p.add_post_processor(ConvertTokenToIdx())
-    p.add_post_processor(CreateBinsByNestedLength('snli_train', min_batch_size=128))
-    state = p.execute()
+    p.add_post_processor(StreamToNumpyTable('snli_train', calc_length_for_keys=['input', 'support']))
+    p.execute()
+    p.save_vocabs()
 
     # dev and test data
-    p2 = Pipeline('snli_example')
+    p2 = Pipeline('snli_example', t)
     p2.copy_vocab_from_pipeline(p)
     p2.add_path(join(zip_path, file_paths[1]))
     p2.add_line_processor(JsonLoaderProcessors())
@@ -121,19 +112,11 @@ def preprocess_SNLI(delete_data=False):
     p2.add_line_processor(DictKey2ListMapper(['sentence1', 'sentence2', 'gold_label']))
     p2.add_sent_processor(ToLower())
     p2.add_sent_processor(Tokenizer(tokenizer.tokenize), t)
-    #p2.add_sent_processor(NaiveNCharTokenizer(3), not_t)
-    p2.add_post_processor(SaveLengthsToState())
-    p2.execute()
-
-    p2.clear_processors()
-    p2.add_sent_processor(ToLower())
-    p2.add_sent_processor(Tokenizer(tokenizer.tokenize), t)
-    #p2.add_sent_processor(NaiveNCharTokenizer(3), not_t)
     p2.add_post_processor(ConvertTokenToIdx())
-    p2.add_post_processor(StreamToHDF5('snli_dev'))
+    p2.add_post_processor(StreamToNumpyTable('snli_dev', calc_length_for_keys=['input', 'support']))
     p2.execute()
 
-    p3 = Pipeline('snli_example')
+    p3 = Pipeline('snli_example', t)
     p3.copy_vocab_from_pipeline(p)
     p3.add_path(join(zip_path, file_paths[2]))
     p3.add_line_processor(JsonLoaderProcessors())
@@ -141,25 +124,16 @@ def preprocess_SNLI(delete_data=False):
     p3.add_line_processor(DictKey2ListMapper(['sentence1', 'sentence2', 'gold_label']))
     p3.add_sent_processor(ToLower())
     p3.add_sent_processor(Tokenizer(tokenizer.tokenize), t)
-    #p3.add_sent_processor(NaiveNCharTokenizer(3), not_t)
-    p3.add_post_processor(SaveLengthsToState())
-    p3.execute()
-
-    p3.clear_processors()
-    p3.add_sent_processor(ToLower())
-    p3.add_sent_processor(Tokenizer(tokenizer.tokenize), t)
-    #p3.add_sent_processor(NaiveNCharTokenizer(3), not_t)
     p3.add_post_processor(ConvertTokenToIdx())
-    p3.add_post_processor(StreamToHDF5('snli_test'))
+    p3.add_post_processor(StreamToNumpyTable('snli_test', calc_length_for_keys=['input', 'support']))
     p3.execute()
-
 
 
 def main():
     Logger.GLOBAL_LOG_LEVEL = LogLevel.INFO
     #Config.backend = Backends.TENSORFLOW
     Config.backend = Backends.TORCH
-    Config.cuda = True
+    Config.cuda = False
     Config.dropout = 0.1
     Config.hidden_size = 128
     Config.embedding_size = 256
@@ -171,15 +145,14 @@ def main():
 
 
     p = Pipeline('snli_example')
-    vocab = p.state['vocab']
-    vocab.load_from_disk()
+    p.load_vocabs()
+    vocab = p.state['vocab']['general']
 
     batch_size = 128
     if Config.backend == Backends.TENSORFLOW:
         from spodernet.backends.tfbackend import TensorFlowConfig
         TensorFlowConfig.init_batch_size(batch_size)
     train_batcher = StreamBatcher('snli_example', 'snli_train', batch_size, randomize=True, loader_threads=8)
-    #train_batcher.subscribe_to_batch_prepared_event(SomeExpensivePreprocessing())
     dev_batcher = StreamBatcher('snli_example', 'snli_dev', batch_size)
     test_batcher  = StreamBatcher('snli_example', 'snli_test', batch_size)
 
@@ -190,7 +163,7 @@ def main():
     train_batcher.subscribe_to_start_of_epoch_event(eta)
 
     model = Model()
-    model.add(Embedding(128, vocab.num_embeddings))
+    model.add(Embedding(128, vocab.num_token))
     model.add(PairedBiDirectionalLSTM(128, hidden_size=256, variable_length=True, conditional_encoding=False))
     model.add(SoftmaxCrossEntropy(input_size=256*4, num_labels=3))
 

@@ -62,20 +62,18 @@ class DataLoaderSlaveNumpyTable(Thread):
 
     def construct_joined_table(self, tbl_config):
         main_tbl = None
-        print(tbl_config)
-        for inp_type, tbl_name, samples in tbl_config:
+        for inp_type, tbl_name, samples, base_path in tbl_config:
             if main_tbl is None:
-                main_tbl = NumpyTable(tbl_name, fixed_length=False, pad=True, seed=self.seed)
+                main_tbl = NumpyTable(tbl_name, fixed_length=False, pad=True, seed=self.seed, base_path=base_path)
                 main_tbl.init()
             else:
-                tbl = NumpyTable(tbl_name, fixed_length=False, pad=True, seed=self.seed)
+                tbl = NumpyTable(tbl_name, fixed_length=False, pad=True, seed=self.seed, base_path=base_path)
                 tbl.init()
                 main_tbl.join(tbl)
         self.main_tbl = main_tbl
 
     def publish_at_prepared_batch_event(self, batch_parts):
         for obs in self.stream_batcher.at_batch_prepared_observers:
-            print(obs)
             batch_parts = obs.at_batch_prepared(batch_parts)
         return batch_parts
 
@@ -283,11 +281,17 @@ class StreamBatcher(object):
             raise Exception('Backend has unsupported value {0}'.format(Config.backend))
 
 
+        #config_path = join(get_data_path(), pipeline_name, name, 'hdf5_config.pkl')
+        #config = pickle.load(open(config_path))
+        #self.paths = config['paths']
+        #self.fractions = config['fractions']
+        #self.num_batches = int(np.sum(config['counts']) / batch_size)
         #batchidx2paths, batchidx2start_end, shard2batchidx = self.create_batchidx_maps(config['counts'])
 
         for i in range(loader_threads):
             seed = 2345 + (i*83)
             self.loaders.append(DataLoaderSlaveNumpyTable(self, batch_size, tbl_config, same_length=same_length, randomize=True, seed=seed))
+            #self.loaders.append(DataLoaderSlave(self, batchidx2paths, batchidx2start_end, randomize, self.paths, shard2batchidx, seed, self.fractions))
             self.loaders[-1].start()
 
 
