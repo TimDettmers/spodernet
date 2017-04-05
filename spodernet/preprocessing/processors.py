@@ -266,6 +266,7 @@ class StreamToNumpyTable(AbstractLoopLevelListOfTokensProcessor):
         self.calc_length_for_keys = calc_length_for_keys
         self.key2dtype = key2dtype
         self.config = []
+        self.key2samples_processes = {}
 
     def link_with_pipeline(self, state):
         self.state = state
@@ -291,6 +292,13 @@ class StreamToNumpyTable(AbstractLoopLevelListOfTokensProcessor):
         if inp_type in self.calc_length_for_keys:
             self.tbls[inp_type + '_length'].append(np.array(len(tokens), dtype=np.int32))
 
+        if inp_type not in self.key2samples_processes:
+            self.key2samples_processes[inp_type] = 0
+
+        self.key2samples_processes[inp_type] += 1
+        if self.key2samples_processes[inp_type] % 10000 == 0:
+            log.info('Written {0} samples of type {1} so far...', self.key2samples_processes[inp_type], inp_type)
+
     def post_process(self, inp_type):
         self.tbls[inp_type].write_index()
         self.config.append([inp_type, self.tbls[inp_type].name, len(self.tbls[inp_type]), self.base_path])
@@ -299,7 +307,7 @@ class StreamToNumpyTable(AbstractLoopLevelListOfTokensProcessor):
             tbl.write_index()
             self.config.append([inp_type + '_length', tbl.name, len(tbl), self.base_path])
 
-        pickle.dump(self.config, open(join(self.base_path, 'tbl_config.pkl'), 'w'))
+        simplejson.dump(self.config, open(join(self.base_path, 'tbl_config.pkl'), 'w'))
         log.debug('Saving table config to: {0}'.format(join(self.base_path, 'tbl_config.pkl')))
 
 

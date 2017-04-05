@@ -139,7 +139,7 @@ def main():
     Config.embedding_size = 256
     Config.L2 = 0.00003
 
-    do_process = False
+    do_process = True
     if do_process:
         preprocess_SNLI(delete_data=True)
 

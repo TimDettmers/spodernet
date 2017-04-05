@@ -13,6 +13,7 @@ import itertools
 import scipy.stats
 from io import StringIO
 import dill
+import simplejson
 
 from spodernet.preprocessing.pipeline import Pipeline
 from spodernet.preprocessing.processors import Tokenizer, SaveStateToList, AddToVocab, ToLower, ConvertTokenToIdx, SaveLengthsToState
@@ -721,7 +722,7 @@ def test_numpytable_batch_streamer(batch_size):
     # For SNLI the targets consist of single words'
     assert np.max(state['data']['lengths']['target']) == 1, 'Max index label length should be 1'
     tbl_config_path  = join(base_path, 'tbl_config.pkl')
-    tbl_config = pickle.load(open(tbl_config_path))
+    tbl_config = simplejson.load(open(tbl_config_path))
     main_tbl = NumpyTable(tbl_config[0][1], fixed_length=False, base_path=base_path)
     main_tbl.init()
     assert len(main_tbl) == 1000, 'There should be 1000 samples for this dataset, but found {0}!'.format(len(main_tbl))

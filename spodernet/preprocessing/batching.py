@@ -7,6 +7,7 @@ import datetime
 import numpy as np
 import cPickle as pickle
 import Queue
+import simplejson
 
 from spodernet.utils.util import get_data_path, load_hdf_file, Timer
 from spodernet.utils.global_config import Config, Backends
@@ -246,7 +247,7 @@ class DataLoaderSlave(Thread):
 class StreamBatcher(object):
     def __init__(self, pipeline_name, name, batch_size, loader_threads=4, randomize=False, same_length=True, seed=None):
         tbl_config_path = join(get_data_path(), pipeline_name, name, 'tbl_config.pkl')
-        tbl_config = pickle.load(open(tbl_config_path))
+        tbl_config = simplejson.load(open(tbl_config_path))
         self.num_batches = int(tbl_config[0][2] / batch_size)
         self.batch_size = batch_size
         self.batch_idx = 0

@@ -6,9 +6,12 @@ import simplejson as json
 import zipfile
 
 from spodernet.preprocessing.vocab import Vocab
+from spodernet.utils.util import Timer
 
 from spodernet.utils.logger import Logger
 log = Logger('pipeline.py.txt')
+
+t = Timer()
 
 class Pipeline(object):
     def __init__(self, name, keys=None, delete_all_previous_data=False):
@@ -141,39 +144,54 @@ class Pipeline(object):
 
         for path in self.paths:
             for var in self.stream_file(path):
+                t.tick('text')
                 for filter_keys, textp in self.text_processors:
                     for i, key in enumerate(self.keys):
                         if key in filter_keys:
                             var[i] = textp.process(var[i], inp_type=key)
+                t.tick('text')
 
                 for i in range(len(var)):
                     var[i] = (var[i] if isinstance(var[i], list) else [var[i]])
 
+                t.tick('sent')
                 for filter_keys, sentp in self.sent_processors:
                     for i, key in enumerate(self.keys):
                         if key in filter_keys:
                             for j in range(len(var[i])):
                                 var[i][j] = sentp.process(var[i][j], inp_type=key)
+                t.tick('sent')
 
                 for i in range(len(var)):
                     var[i] = (var[i] if isinstance(var[i][0], list) else [[sent] for sent in var[i]])
 
+                t.tick('token')
                 for filter_keys, tokenp in self.token_processors:
                     for i, key in enumerate(self.keys):
                         if key in filter_keys:
                             for j in range(len(var[i])):
                                 for k in range(len(var[i][j])):
                                     var[i][j][k] = tokenp.process(var[i][j][k], inp_type=key)
+                t.tick('token')
 
+                t.tick('post')
                 for filter_keys, postp in self.post_processors:
                     for i, key in enumerate(self.keys):
                         if key in filter_keys:
                             var[i] = postp.process(var[i], inp_type=key)
+                t.tick('post')
 
+        t.tick('postpost')
         for key in self.keys:
             for keys, textp in self.text_processors: textp.post_process(key)
             for keys, sentp in self.sent_processors: sentp.post_process(key)
             for keys, tokenp in self.token_processors: tokenp.post_process(key)
             for keys, postp in self.post_processors: postp.post_process(key)
+        t.tock('postpost')
+        t.tock('text')
+        t.tock('sent')
+        t.tock('token')
+        t.tock('post')
+
 
         return self.state
