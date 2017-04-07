@@ -787,6 +787,49 @@ def test_numpytable_batch_streamer(batch_size):
         tbl.clear_table()
 
 
+def test_abitrary_input_data():
+    base_path = join(get_data_path(), 'test_keys')
+    # clean all data from previous failed tests   
+    if os.path.exists(base_path):
+        shutil.rmtree(base_path)
+    file_path = join(get_data_path(), 'test_pipeline', 'test_data.json')
+
+    questions = [['bla bla Q1', 'this is q2', 'q3'], ['q4 set2', 'or is it q1?']]
+    support = [['I like', 'multiple supports'], ['yep', 'they are pretty cool', 'yeah, right?']]
+    answer = [['yes', 'absolutly', 'not really'], ['you bet', 'nah']]
+    pos_tag = [['t1', 't2'], ['t1', 't2', 't3']]
+
+    with open(file_path, 'w') as f:
+        for i in range(2):
+            f.write(json.dumps([questions[i], support[i], answer[i], pos_tag[i]]) + '\n')
+
+    p = Pipeline('test_keys', ['question', 'support', 'answer', 'pos'])
+    p.add_path(file_path)
+    p.add_line_processor(JsonLoaderProcessors())
+    p.add_token_processor(AddToVocab())
+    p.add_post_processor(SaveLengthsToState())
+    p.execute()
+
+    p.clear_processors()
+    p.add_token_processor(ConvertTokenToIdx(keys=['answer', 'pos']))
+    p.add_post_processor(StreamToHDF5('test'))
+    p.add_post_processor(SaveStateToList('data'))
+    state = p.execute()
+
+    Q = state['data']['data']['question']
+    S = state['data']['data']['support']
+    A = state['data']['data']['answer']
+    pos = state['data']['data']['pos']
+    print(Q)
+    print(S)
+    print(A)
+    print(pos)
+
+
+    assert False
+
+
+
 #batch_size = [17, 128]
 #samples_per_file = [500]
 #randomize = [True, False]
