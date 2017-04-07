@@ -8,7 +8,6 @@ import simplejson
 from spodernet.utils.util import get_data_path, write_to_hdf, make_dirs_if_not_exists, load_hdf_file
 from spodernet.interfaces import IAtBatchPreparedObservable
 from spodernet.utils.global_config import Config
-from diskhash.core import NumpyTable
 
 from spodernet.utils.logger import Logger
 log = Logger('processors.py.txt')
@@ -41,16 +40,6 @@ class TargetIdx2MultiTarget(IAtBatchPreparedObservable):
                     new_t[i, col] = 1
 
         return [inp, inp_len, sup, sup_len, t, idx, new_t]
-
-class RemoveUnnecessaryDimensions(IAtBatchPreparedObservable):
-    def at_batch_prepared(self, batch_parts):
-        for i in range(len(batch_parts)):
-            while batch_parts[i].shape[-1] == 1:
-                shape = list(batch_parts[i].shape)
-                del shape[-1]
-                batch_parts[i] = batch_parts[i].reshape(shape)
-
-        return batch_parts
 
 class ListIndexRemapper(object):
     def __init__(self, list_of_new_idx):
@@ -99,9 +88,6 @@ class AbstractProcessor(object):
 
     def process(self, inputs, inp_type):
         raise NotImplementedError('Classes that inherit from AbstractProcessor need to implement the process method')
-
-    def post_process(self, inp_type):
-        pass
 
 
 class AbstractLoopLevelTokenProcessor(AbstractProcessor):
@@ -189,7 +175,7 @@ class NaiveNCharTokenizer(AbstractProcessor):
         return [sentence[i:i+self.N] for i in range(0, len(sentence), self.N)]
 
 class AddToVocab(AbstractProcessor):
-    def __init__(self, label_keys=['target']):
+    def __init__(self):
         super(AddToVocab, self).__init__()
 
     def process(self, token, inp_type):
@@ -257,59 +243,6 @@ class SaveLengthsToState(AbstractLoopLevelListOfTokensProcessor):
         log.statistical('A list of tokens: {0}', 0.0001, tokens)
         log.debug_once('Pipeline {1}: A list of tokens: {0}', tokens, self.state['name'])
         return tokens
-
-class StreamToNumpyTable(AbstractLoopLevelListOfTokensProcessor):
-    def __init__(self, name, calc_length_for_keys=[], key2dtype={}):
-        super(StreamToNumpyTable, self).__init__()
-        self.tbls = {}
-        self.name = name
-        self.calc_length_for_keys = calc_length_for_keys
-        self.key2dtype = key2dtype
-        self.config = []
-        self.key2samples_processes = {}
-
-    def link_with_pipeline(self, state):
-        self.state = state
-        self.base_path = join(self.state['path'], self.name)
-        make_dirs_if_not_exists(self.base_path)
-
-    def process_list_of_tokens(self, tokens, inp_type):
-        if inp_type not in self.tbls:
-            tbl = NumpyTable(self.name  + '_' + inp_type, fixed_length=False, base_path=self.base_path)
-            tbl.init()
-            tbl.add_index('length', lambda x: x.shape[1])
-            self.tbls[inp_type] = tbl
-            if inp_type in self.calc_length_for_keys:
-                self.tbls[inp_type + '_length'] = NumpyTable(self.name + '_' + inp_type + '_length', fixed_length=True, base_path=self.base_path)
-                self.tbls[inp_type + '_length'].init()
-                self.tbls[inp_type + '_length'].add_index('length', lambda x: x.shape[1])
-
-        tbl = self.tbls[inp_type]
-        if inp_type in self.key2dtype:
-            tbl.append(np.array(tokens, dtype=self.key2dtype[inp_type]))
-        else:
-            tbl.append(np.array(tokens, dtype=np.int32))
-        if inp_type in self.calc_length_for_keys:
-            self.tbls[inp_type + '_length'].append(np.array(len(tokens), dtype=np.int32))
-
-        if inp_type not in self.key2samples_processes:
-            self.key2samples_processes[inp_type] = 0
-
-        self.key2samples_processes[inp_type] += 1
-        if self.key2samples_processes[inp_type] % 10000 == 0:
-            log.info('Written {0} samples of type {1} so far...', self.key2samples_processes[inp_type], inp_type)
-
-    def post_process(self, inp_type):
-        self.tbls[inp_type].write_index()
-        self.config.append([inp_type, self.tbls[inp_type].name, len(self.tbls[inp_type]), self.base_path])
-        if inp_type in self.calc_length_for_keys:
-            tbl = self.tbls[inp_type + '_length']
-            tbl.write_index()
-            self.config.append([inp_type + '_length', tbl.name, len(tbl), self.base_path])
-
-        simplejson.dump(self.config, open(join(self.base_path, 'tbl_config.pkl'), 'w'))
-        log.debug('Saving table config to: {0}'.format(join(self.base_path, 'tbl_config.pkl')))
-
 
 class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
     def __init__(self, name, samples_per_file=50000):

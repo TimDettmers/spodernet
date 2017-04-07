@@ -7,14 +7,11 @@ import datetime
 import numpy as np
 import cPickle as pickle
 import Queue
-import simplejson
 
 from spodernet.utils.util import get_data_path, load_hdf_file, Timer
 from spodernet.utils.global_config import Config, Backends
 from spodernet.hooks import ETAHook
 from spodernet.interfaces import IAtIterEndObservable, IAtEpochEndObservable, IAtEpochStartObservable, IAtBatchPreparedObservable
-from spodernet.preprocessing.processors import RemoveUnnecessaryDimensions
-from diskhash.core import NumpyTable
 
 from spodernet.utils.logger import Logger
 log = Logger('batching.py.txt')
@@ -36,80 +33,6 @@ class BatcherState(object):
         self.timer = None
         self.multi_labels = None
 
-
-class DataLoaderSlaveNumpyTable(Thread):
-    def __init__(self, stream_batcher, batch_size, tbl_config, same_length=True, randomize=True, seed=None):
-        super(DataLoaderSlaveNumpyTable, self).__init__()
-        if randomize:
-            assert seed is not None, 'For randomized data loadingg a seed needs to be set!'
-        self.batch_size = batch_size
-        self.seed = seed
-        self.stream_batcher = stream_batcher
-        self.current_data = {}
-        self.randomize = randomize
-        self.rdm = np.random.RandomState(234+seed)
-        self.main_tbl = None
-        self.same_length = same_length
-        self.construct_joined_table(tbl_config)
-        self.max_idx = len(self.main_tbl)
-        self._stop = Event()
-        self.daemon = True
-
-    def stop(self):
-        self._stop.set()
-
-    def stopped(self):
-        return self._stop.isSet()
-
-    def construct_joined_table(self, tbl_config):
-        main_tbl = None
-        for inp_type, tbl_name, samples, base_path in tbl_config:
-            if main_tbl is None:
-                main_tbl = NumpyTable(tbl_name, fixed_length=False, pad=True, seed=self.seed, base_path=base_path)
-                main_tbl.init()
-            else:
-                tbl = NumpyTable(tbl_name, fixed_length=False, pad=True, seed=self.seed, base_path=base_path)
-                tbl.init()
-                main_tbl.join(tbl)
-        self.main_tbl = main_tbl
-
-    def publish_at_prepared_batch_event(self, batch_parts):
-        for obs in self.stream_batcher.at_batch_prepared_observers:
-            batch_parts = obs.at_batch_prepared(batch_parts)
-        return batch_parts
-
-    def run(self):
-        while not self.stopped():
-
-            # we have this to terminate threads gracefully
-            # if we use daemons then the terminational signal might not be heard while loading files
-            # thus causing ugly exceptions
-            try:
-                batch_idx = self.stream_batcher.work.get(block=False, timeout=1.0)
-            except:
-                continue
-
-
-            if self.randomize:
-                if self.same_length:
-                    batch_parts, idx = self.main_tbl.get_random_index_batch(self.batch_size, 'length', return_index=True)
-                    batch_parts.append(idx)
-                else:
-                    batch_parts, idx = self.main_tbl.get_random_batch(self.batch_size, return_index=True)
-                    batch_parts.append(idx)
-            else:
-                start = self.batch_size*batch_idx
-                end = self.batch_size*(batch_idx+1)
-                batch_parts = self.main_tbl[start:end]
-                batch_parts += np.arange(start, end)
-
-            batch_parts = self.publish_at_prepared_batch_event(batch_parts)
-            # pass data to streambatcher
-            self.stream_batcher.prepared_batches[batch_idx] = batch_parts
-            try:
-                self.stream_batcher.prepared_batchidx.put(batch_idx, block=False, timeout=1.0)
-            except:
-                continue
 
 class DataLoaderSlave(Thread):
     def __init__(self, stream_batcher, batchidx2paths, batchidx2start_end, randomize=False, paths=None, shard2batchidx=None, seed=None, shard_fractions=None):
@@ -233,7 +156,6 @@ class DataLoaderSlave(Thread):
 
 
             batch_parts = self.publish_at_prepared_batch_event(batch_parts)
-
             # pass data to streambatcher
             self.stream_batcher.prepared_batches[batch_idx] = batch_parts
             try:
@@ -245,10 +167,12 @@ class DataLoaderSlave(Thread):
 
 
 class StreamBatcher(object):
-    def __init__(self, pipeline_name, name, batch_size, loader_threads=4, randomize=False, same_length=True, seed=None):
-        tbl_config_path = join(get_data_path(), pipeline_name, name, 'tbl_config.pkl')
-        tbl_config = simplejson.load(open(tbl_config_path))
-        self.num_batches = int(tbl_config[0][2] / batch_size)
+    def __init__(self, pipeline_name, name, batch_size, loader_threads=8, randomize=False, seed=None):
+        config_path = join(get_data_path(), pipeline_name, name, 'hdf5_config.pkl')
+        config = pickle.load(open(config_path))
+        self.paths = config['paths']
+        self.fractions = config['fractions']
+        self.num_batches = int(np.sum(config['counts']) / batch_size)
         self.batch_size = batch_size
         self.batch_idx = 0
         self.prefetch_batch_idx = 0
@@ -260,7 +184,7 @@ class StreamBatcher(object):
         self.end_iter_observers = []
         self.end_epoch_observers = []
         self.start_epoch_observers = []
-        self.at_batch_prepared_observers = [RemoveUnnecessaryDimensions()]
+        self.at_batch_prepared_observers = []
         self.state = BatcherState()
         self.current_iter = 0
         self.current_epoch = 0
@@ -282,17 +206,11 @@ class StreamBatcher(object):
             raise Exception('Backend has unsupported value {0}'.format(Config.backend))
 
 
-        #config_path = join(get_data_path(), pipeline_name, name, 'hdf5_config.pkl')
-        #config = pickle.load(open(config_path))
-        #self.paths = config['paths']
-        #self.fractions = config['fractions']
-        #self.num_batches = int(np.sum(config['counts']) / batch_size)
-        #batchidx2paths, batchidx2start_end, shard2batchidx = self.create_batchidx_maps(config['counts'])
+        batchidx2paths, batchidx2start_end, shard2batchidx = self.create_batchidx_maps(config['counts'])
 
         for i in range(loader_threads):
             seed = 2345 + (i*83)
-            self.loaders.append(DataLoaderSlaveNumpyTable(self, batch_size, tbl_config, same_length=same_length, randomize=True, seed=seed))
-            #self.loaders.append(DataLoaderSlave(self, batchidx2paths, batchidx2start_end, randomize, self.paths, shard2batchidx, seed, self.fractions))
+            self.loaders.append(DataLoaderSlave(self, batchidx2paths, batchidx2start_end, randomize, self.paths, shard2batchidx, seed, self.fractions))
             self.loaders[-1].start()
 
 
