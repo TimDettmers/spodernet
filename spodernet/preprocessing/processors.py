@@ -245,15 +245,21 @@ class SaveLengthsToState(AbstractLoopLevelListOfTokensProcessor):
         return tokens
 
 class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
-    def __init__(self, name, samples_per_file=50000):
+    def __init__(self, name, samples_per_file=50000, keys=['input', 'support', 'target'], keys_for_length=['input', 'support']):
         super(StreamToHDF5, self).__init__()
         self.max_length = None
         self.samples_per_file = samples_per_file
         self.name = name
         self.idx = 0
-        self.shard_id = {'target' : 0, 'input' : 0, 'support' : 0}
-        self.max_lengths = {'target' : 0, 'input' : 0, 'support' : 0}
-        self.data = {'target' : [], 'input' : [], 'support' : [], 'index' : []}
+        self.keys = keys
+        self.keys.append('index')
+        self.shard_id = {}
+        self.max_lengths = {}
+        self.data = {}
+        for key in keys:
+            self.shard_id[key] = 0
+            self.max_lengths[key] = 0
+            self.data[key] = []
         self.num_samples = None
         self.config = {'paths' : [], 'sample_count' : []}
         self.checked_for_lengths = False
@@ -270,10 +276,10 @@ class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
             log.error('Do a first pass to produce lengths first, that is use the "SaveLengths" ' \
                        'processor, execute, clean processors, then rerun the pipeline with hdf5 streaming.')
         if self.num_samples == None:
-            self.num_samples = len(self.state['data']['lengths']['input'])
+            self.num_samples = len(self.state['data']['lengths'][self.keys[0]])
         log.debug('Using type int32 for inputs and supports for now, but this may not be correct in the future')
         self.checked_for_lengths = True
-        self.num_samples = len(self.state['data']['lengths']['input'])
+        self.num_samples = len(self.state['data']['lengths'][self.keys[0]])
         log.debug('Number of samples as calcualted with the length data (SaveLengthsToState): {0}', self.num_samples)
 
     def process_list_of_tokens(self, tokens, inp_type):
@@ -287,13 +293,13 @@ class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
             log.statistical('max length of the dataset: {0}', 0.0001, max_length)
         x = np.zeros((self.max_lengths[inp_type]), dtype=np.int32)
         x[:len(tokens)] = tokens
-        if len(tokens) == 1 and inp_type == 'target' and self.max_lengths[inp_type] == 1:
+        if len(tokens) == 1 and self.max_lengths[inp_type] == 1:
             self.data[inp_type].append(x[0])
             log.debug_once('Adding one dimensional data for type ' + inp_type + ': {0}', x[0])
         else:
             self.data[inp_type].append(x.tolist())
             log.debug_once('Adding list data for type ' + inp_type + ': {0}', x.tolist())
-        if inp_type == 'target':
+        if inp_type == self.keys[-2]:
             self.data['index'].append(self.idx)
             self.idx += 1
 
@@ -344,11 +350,11 @@ class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
         self.paths[idx].append(join(self.base_path, file_name))
 
 
-        if inp_type == 'input':
+        if inp_type == self.keys[0]:
             log.statistical('Count of shard {0}; should be {1} most of the time'.format(X.shape[0], self.samples_per_file), 0.1)
             self.config['sample_count'].append(X.shape[0])
 
-        if inp_type != 'target':
+        if inp_type != self.keys[-2]:
             start = idx*self.samples_per_file
             end = (idx+1)*self.samples_per_file
             X_len = np.array(self.state['data']['lengths'][inp_type][start:end], dtype=np.int32)

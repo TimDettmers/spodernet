@@ -566,7 +566,7 @@ def test_stream_to_hdf5():
     p.add_post_processor(ConvertTokenToIdx())
     p.add_post_processor(SaveStateToList('idx'))
     # 2 samples per file -> 50 files
-    streamer = StreamToHDF5(data_folder_name, samples_per_file=2)
+    streamer = StreamToHDF5(data_folder_name, samples_per_file=2, keys=['input', 'support', 'target'])
     p.add_post_processor(streamer)
     state = p.execute()
 
@@ -777,7 +777,7 @@ def test_non_random_stream_batcher(samples_per_file, randomize, batch_size):
     p.add_post_processor(ConvertTokenToIdx())
     p.add_post_processor(SaveStateToList('idx'))
     # 2 samples per file -> 50 files
-    streamer = StreamToHDF5(data_folder_name, samples_per_file=samples_per_file)
+    streamer = StreamToHDF5(data_folder_name, samples_per_file=samples_per_file, keys=['input', 'support', 'target'])
     p.add_post_processor(streamer)
     state = p.execute()
 
@@ -868,7 +868,7 @@ def test_abitrary_input_data():
 
     p.clear_processors()
     p.add_token_processor(ConvertTokenToIdx(keys=['answer', 'pos']))
-    p.add_post_processor(StreamToHDF5('test'))
+    p.add_post_processor(StreamToHDF5('test', keys=['input', 'support', 'target']))
     p.add_post_processor(SaveStateToList('data'))
     state = p.execute()
 

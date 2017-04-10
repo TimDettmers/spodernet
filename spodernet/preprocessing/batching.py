@@ -302,7 +302,8 @@ class StreamBatcher(object):
             if self.batch_idx == batch_idx:
                 return self.prepared_batches.pop(self.batch_idx)
             else:
-                self.cached_batches[batch_idx] = self.prepared_batches.pop(batch_idx)
+                if batch_idx in self.prepared_batches:
+                    self.cached_batches[batch_idx] = self.prepared_batches.pop(batch_idx)
                 return self.get_next_batch_parts()
 
     def __iter__(self):
