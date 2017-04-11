@@ -175,14 +175,19 @@ class NaiveNCharTokenizer(AbstractProcessor):
         return [sentence[i:i+self.N] for i in range(0, len(sentence), self.N)]
 
 class AddToVocab(AbstractProcessor):
-    def __init__(self):
+    def __init__(self, general_vocab_keys=None):
         super(AddToVocab, self).__init__()
+        self.general_vocab_keys = general_vocab_keys
 
     def process(self, token, inp_type):
         if inp_type == 'target':
             self.state['vocab']['general'].add_label(token)
             log.statistical('Example vocab target token {0}', 0.01, token)
         else:
+            if self.general_vocab_keys:
+                if inp_type not in self.general_vocab_keys:
+                    return token
+
             self.state['vocab']['general'].add_token(token)
             message = 'Example vocab {0} token'.format(inp_type)
             log.statistical(message + ': {0}', 0.01, token)

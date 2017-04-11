@@ -844,6 +844,7 @@ def test_non_random_stream_batcher(samples_per_file, randomize, batch_size):
 
 
 def test_abitrary_input_data():
+    tokenizer = nltk.tokenize.WordPunctTokenizer()
     base_path = join(get_data_path(), 'test_keys')
     # clean all data from previous failed tests   
     if os.path.exists(base_path):
@@ -852,7 +853,7 @@ def test_abitrary_input_data():
 
     questions = [['bla bla Q1', 'this is q2', 'q3'], ['q4 set2', 'or is it q1?']]
     support = [['I like', 'multiple supports'], ['yep', 'they are pretty cool', 'yeah, right?']]
-    answer = [['yes', 'absolutly', 'not really'], ['you bet', 'nah']]
+    answer = [['yes', 'absolutly', 'not really'], ['you bet', 'yes']]
     pos_tag = [['t1', 't2'], ['t1', 't2', 't3']]
 
     with open(file_path, 'w') as f:
@@ -862,13 +863,15 @@ def test_abitrary_input_data():
     p = Pipeline('test_keys', ['question', 'support', 'answer', 'pos'])
     p.add_path(file_path)
     p.add_line_processor(JsonLoaderProcessors())
-    p.add_token_processor(AddToVocab())
+    p.add_sent_processor(Tokenizer(tokenizer.tokenize))
+    p.add_token_processor(AddToVocab(general_vocab_keys=['question', 'support']))
     p.add_post_processor(SaveLengthsToState())
     p.execute()
 
     p.clear_processors()
+    p.add_sent_processor(Tokenizer(tokenizer.tokenize))
     p.add_token_processor(ConvertTokenToIdx(keys=['answer', 'pos']))
-    p.add_post_processor(StreamToHDF5('test', keys=['input', 'support', 'target']))
+    p.add_post_processor(StreamToHDF5('test', keys=['question', 'support', 'answer', 'pos']))
     p.add_post_processor(SaveStateToList('data'))
     state = p.execute()
 
@@ -876,13 +879,25 @@ def test_abitrary_input_data():
     S = state['data']['data']['support']
     A = state['data']['data']['answer']
     pos = state['data']['data']['pos']
-    print(Q)
-    print(S)
-    print(A)
-    print(pos)
+    #vocab is offset by 2, due to UNK and empty word ''
+    # note that we travers the data like q1, s1, a1; q2, s2, a2
+    # we share vocab between question and support
+    #expected_Q_ids = [[[ 2, 2, 3], [4, 5, 6], [7]], [[12, 13], [14, 5, 15, 16, 17]]]
+    #expected_S_ids = [[[8, 9], [10, 11]], [[18], [19, 20, 21, 22], [23, 24, 25, 17]]]
+    #expected_answer_ids = [[[2],[3],[4, 5]],[[6,7], [2]]]
+    #expected_pos_ids = [[[2],[3]],[[2],[3],[4]]]
+
+    #np.testing.assert_array_equal(np.array(expected_Q_ids), Q)
+    #np.testing.assert_array_equal(np.array(expected_S_ids), S)
+    #np.testing.assert_array_equal(np.array(expected_answer_ids), A)
+    #np.testing.assert_array_equal(np.array(expected_pos_ids), pos)
 
 
-    assert False
+    #batcher = StreamBatcher('test_keys', 'test', 2, loader_threads=1, randomize=False)
+    #del batcher.at_batch_prepared_observers[:] # we want to test on raw numpy data
+    #for q, s, a, pos, idx in batcher:
+    #    print(q)
+    #assert False
 
 
 def test_bin_streamer():
