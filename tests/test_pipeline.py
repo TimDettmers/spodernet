@@ -860,7 +860,7 @@ def test_abitrary_input_data():
         for i in range(2):
             f.write(json.dumps([questions[i], support[i], answer[i], pos_tag[i]]) + '\n')
 
-    p = Pipeline('test_keys', ['question', 'support', 'answer', 'pos'])
+    p = Pipeline('test_keys', keys=['question', 'support', 'answer', 'pos'])
     p.add_path(file_path)
     p.add_line_processor(JsonLoaderProcessors())
     p.add_sent_processor(Tokenizer(tokenizer.tokenize))

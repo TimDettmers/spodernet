@@ -14,7 +14,7 @@ log = Logger('pipeline.py.txt')
 t = Timer()
 
 class Pipeline(object):
-    def __init__(self, name, keys=None, delete_all_previous_data=False):
+    def __init__(self, name, delete_all_previous_data=False, keys=None):
         self.line_processors = []
         self.text_processors = []
         self.sent_processors = []
