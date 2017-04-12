@@ -167,7 +167,7 @@ class DataLoaderSlave(Thread):
 
 
 class StreamBatcher(object):
-    def __init__(self, pipeline_name, name, batch_size, loader_threads=8, randomize=False, seed=None):
+    def __init__(self, pipeline_name, name, batch_size, loader_threads=4, randomize=False, seed=None):
         config_path = join(get_data_path(), pipeline_name, name, 'hdf5_config.pkl')
         config = pickle.load(open(config_path))
         self.paths = config['paths']

@@ -117,7 +117,7 @@ class Pipeline(object):
     def load_vocabs(self):
         self.state['vocab']['general'].load_from_disk()
         for key in self.keys:
-            self.state['vocab'][key].save_to_disk()
+            self.state['vocab'][key].load_from_disk()
 
     def copy_vocab_from_pipeline(self, pipeline_or_vocab, vocab_type=None):
         if isinstance(pipeline_or_vocab, Pipeline):
