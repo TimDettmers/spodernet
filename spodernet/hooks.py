@@ -145,6 +145,7 @@ class TopKRankingLoss(AbstractHook):
             raise Exception('Backend has unsupported value {0}'.format(Config.backend))
 
 
+
 class LossHook(AbstractHook):
     def __init__(self, name='', print_every_x_batches=1000):
         super(LossHook, self).__init__(name, 'Loss', print_every_x_batches)

@@ -25,6 +25,29 @@ class TorchCUDAConverter(IAtBatchPreparedObservable):
         return batch_parts
 
 
+class TorchNegativeSampling(IAtBatchPreparedObservable):
+    def __init__(self, max_index, keys_to_corrupt=['input', 'target']):
+        self.max_index = max_index
+        self.keys_to_corrupt = keys_to_corrupt
+        self.rdm = np.random.RandomState(34534)
+
+    def at_batch_prepared(self, str2var):
+        samples_per_key = Config.batch_size/len(self.keys_to_corrupt)
+        for i, key in enumerate(self.keys_to_corrupt):
+            variable = str2var[key]
+            new_idx = self.rdm.choice(self.max_index, samples_per_key)
+            if Config.cuda:
+                variable_corrupted = Variable(torch.cuda.LongTensor(variable.size()))
+                variable_corrupted.data.copy_(variable.data)
+                variable_corrupted.data[i*samples_per_key: (i+1)*samples_per_key] = torch.from_numpy(new_idx).cuda()
+            else:
+                variable_corrupted = Variable(torch.LongTensor(variable.size()))
+                variable_corrupted.data.copy_(variable.data)
+                variable_corrupted.data[i*samples_per_key: (i+1)*samples_per_key] = torch.from_numpy(new_idx)
+            str2var[key + '_corrupt'] = variable_corrupted
+
+        return str2var
+
 class TorchDictConverter(IAtBatchPreparedObservable):
     def at_batch_prepared(self, batch_parts):
         str2var = {}

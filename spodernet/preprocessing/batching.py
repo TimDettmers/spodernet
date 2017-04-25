@@ -16,6 +16,8 @@ from spodernet.interfaces import IAtIterEndObservable, IAtEpochEndObservable, IA
 from spodernet.utils.logger import Logger
 log = Logger('batching.py.txt')
 
+benchmark = False
+
 
 class BatcherState(object):
     def __init__(self):
@@ -51,6 +53,8 @@ class DataLoaderSlave(Thread):
         self.paths = paths
         self._stop = Event()
         self.daemon = True
+        self.t = Timer()
+        self.batches_processes = 0
 
     def stop(self):
         self._stop.set()
@@ -119,8 +123,10 @@ class DataLoaderSlave(Thread):
                 self.current_data.pop(old_path, None)
 
     def publish_at_prepared_batch_event(self, batch_parts):
-        for obs in self.stream_batcher.at_batch_prepared_observers:
+        for i, obs in enumerate(self.stream_batcher.at_batch_prepared_observers):
+            self.t.tick(str(i))
             batch_parts = obs.at_batch_prepared(batch_parts)
+            self.t.tick(str(i))
         return batch_parts
 
     def run(self):
@@ -164,6 +170,12 @@ class DataLoaderSlave(Thread):
                 continue
 
             self.clean_cache(current_paths)
+            self.batches_processes += 1
+            if self.batches_processes % 100 == 0:
+                if benchmark:
+                    for i, obs in enumerate(self.stream_batcher.at_batch_prepared_observers):
+                        t = self.t.tock(str(i))
+                        print(i, t, type(obs))
 
 
 class StreamBatcher(object):

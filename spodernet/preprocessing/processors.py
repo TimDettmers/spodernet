@@ -41,6 +41,7 @@ class TargetIdx2MultiTarget(IAtBatchPreparedObservable):
 
         return [inp, inp_len, sup, sup_len, t, idx, new_t]
 
+
 class ListIndexRemapper(object):
     def __init__(self, list_of_new_idx):
         self.list_of_new_idx = list_of_new_idx
@@ -197,14 +198,15 @@ class ToLower(AbstractProcessor):
     def process(self, token, inp_type):
         return token.lower()
 
+
 class ConvertTokenToIdx(AbstractLoopLevelTokenProcessor):
-    def __init__(self, keys=None):
+    def __init__(self, keys2keys=None):
         super(ConvertTokenToIdx, self).__init__()
-        self.keys = keys
+        self.keys2keys = keys2keys #maps key to other key, for example encode inputs with support vocabulary
 
     def process_token(self, token, inp_type):
-        if not self.keys is None and inp_type in self.keys:
-            return self.state['vocab'][inp_type].get_idx(token)
+        if not self.keys2keys is None and inp_type in self.keys2keys:
+            return self.state['vocab'][self.keys2keys[inp_type]].get_idx(token)
         else:
             if inp_type != 'target':
                 log.statistical('a non-label token {0}', 0.00001, token)
@@ -264,7 +266,8 @@ class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
         self.name = name
         self.idx = 0
         self.keys = keys
-        self.keys.append('index')
+        if 'index' not in self.keys:
+            self.keys.append('index')
         self.shard_id = {}
         self.max_lengths = {}
         self.data = {}
@@ -318,6 +321,7 @@ class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
         if (  len(self.data[inp_type]) == self.samples_per_file
            or len(self.data[inp_type]) == self.num_samples):
             self.save_to_hdf5(inp_type)
+
 
         if self.idx % 10000 == 0:
             if self.idx % 50000 == 0:

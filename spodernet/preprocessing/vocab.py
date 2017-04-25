@@ -84,7 +84,7 @@ class Vocab(object):
         if idx in self.idx2token:
             return self.idx2token[idx]
         else:
-            return self.idx2token[-1]
+            return self.idx2token[0]
 
     def save_to_disk(self, name=''):
         log.info('Saving vocab to: {0}'.format(self.path))
