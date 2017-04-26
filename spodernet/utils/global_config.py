@@ -67,8 +67,8 @@ params2type['embedding_dim'] = lambda x: int(x)
 params2type['hidden_size'] = lambda x: int(x)
 params2type['input_dropout'] = lambda x: float(x)
 params2type['feature_map_dropout'] = lambda x: float(x)
-params2type['use_conv_transpose'] = lambda x: x.lower() == 'true'
-params2type['use_bias'] = lambda x: x.lower() == 'true'
+params2type['use_conv_transpose'] = lambda x: x.lower() == 'true' or x == '1'
+params2type['use_bias'] = lambda x: x.lower() == 'true' or x == '1'
 
 alias2params = {}
 alias2params['lr'] = 'learning_rate'

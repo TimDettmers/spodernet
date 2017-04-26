@@ -491,12 +491,15 @@ def test_convert_to_idx_with_separate_vocabs():
         f.write(json.dumps(['2', 'c','#']) + '\n')
 
     # 2. read test data with pipeline
-    p = Pipeline('test_pipeline')
+    keys2keys = {}
+    keys2keys['input'] = 'input'
+    keys2keys['support'] = 'support'
 
+    p = Pipeline('test_pipeline')
     p.add_path(file_path)
     p.add_line_processor(JsonLoaderProcessors())
     p.add_token_processor(AddToVocab())
-    p.add_post_processor(ConvertTokenToIdx(keys=['input', 'support']))
+    p.add_post_processor(ConvertTokenToIdx(keys2keys=keys2keys))
     p.add_post_processor(SaveStateToList('idx'))
     state = p.execute()
 
@@ -842,7 +845,7 @@ def test_non_random_stream_batcher(samples_per_file, randomize, batch_size):
     # 5. clean up
     shutil.rmtree(base_path)
 
-
+@pytest.mark.skip(reason='This functionality is not implemented yet, and will not be implemented in the forseeable future.')
 def test_abitrary_input_data():
     tokenizer = nltk.tokenize.WordPunctTokenizer()
     base_path = join(get_data_path(), 'test_keys')
@@ -860,6 +863,7 @@ def test_abitrary_input_data():
         for i in range(2):
             f.write(json.dumps([questions[i], support[i], answer[i], pos_tag[i]]) + '\n')
 
+    keys2keys = {}
     p = Pipeline('test_keys', keys=['question', 'support', 'answer', 'pos'])
     p.add_path(file_path)
     p.add_line_processor(JsonLoaderProcessors())
