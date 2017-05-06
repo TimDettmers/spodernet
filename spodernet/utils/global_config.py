@@ -23,7 +23,8 @@ class Config:
     use_conv_transpose = False
     use_bias = True
     optimizer = 'adam'
-    learning_rate_decay = 0
+    learning_rate_decay = 1.0
+    label_smoothing_epsilon = 0.1
 
     @staticmethod
     def parse_argv(argv):
@@ -69,6 +70,7 @@ params2type['L2'] = lambda x: float(x)
 params2type['embedding_dim'] = lambda x: int(x)
 params2type['hidden_size'] = lambda x: int(x)
 params2type['input_dropout'] = lambda x: float(x)
+params2type['label_smoothing_epsilon'] = lambda x: float(x)
 params2type['feature_map_dropout'] = lambda x: float(x)
 params2type['use_conv_transpose'] = lambda x: x.lower() == 'true' or x == '1'
 params2type['use_bias'] = lambda x: x.lower() == 'true' or x == '1'
@@ -84,6 +86,8 @@ alias2params['feat_drop'] = 'feature_map_dropout'
 alias2params['bias'] = 'use_bias'
 alias2params['conv_trans'] = 'use_conv_transpose'
 alias2params['opt'] = 'optimizer'
+alias2params['label_smoothing'] = 'label_smoothing_epsilon'
+
 
 
 params2field = {}
@@ -99,5 +103,6 @@ params2field['feature_map_dropout'] = lambda x: setattr(Config, 'feature_map_dro
 params2field['use_conv_transpose'] = lambda x: setattr(Config, 'use_conv_transpose', x)
 params2field['use_bias'] = lambda x: setattr(Config, 'use_bias', x)
 params2field['optimizer'] = lambda x: setattr(Config, 'optimizer', x)
+params2field['label_smoothing_epsilon'] = lambda x: setattr(Config, 'label_smoothing_epsilon', x)
 
 
