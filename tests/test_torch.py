@@ -9,7 +9,7 @@ from spodernet.utils.util import CUDATimer
 def test_cuda_timer():
     start = torch.cuda.Event(enable_timing=True, blocking=True)
     end = torch.cuda.Event(enable_timing=True, blocking=True)
-    k = 1000
+    k = 100
     a = torch.rand(k,k).cuda()
     b = torch.rand(k,k).cuda()
     timer = CUDATimer()
@@ -34,6 +34,6 @@ def test_cuda_timer():
 
     print(cpu_time, cuda_time, timer_time, timer_time_cumulative)
 
-    assert timer_time > cpu_time*0.9 and timer_time < cpu_time*1.1, 'CUDATimer imprecise with respect to CPU time.'
-    assert timer_time > cuda_time*0.9 and timer_time < cuda_time*1.1, 'CUDATimer imprecise with respect to CUDA time.'
-    assert timer_time_cumulative > cuda_time*0.9 and timer_time_cumulative < cuda_time*1.1, 'Cumulative CUDATimer imprecise with respect to CUDA time.'
+    assert timer_time > cpu_time*0.8 and timer_time < cpu_time*1.2, 'CUDATimer imprecise with respect to CPU time.'
+    assert timer_time > cuda_time*0.8 and timer_time < cuda_time*1.2, 'CUDATimer imprecise with respect to CUDA time.'
+    assert timer_time_cumulative > cuda_time*0.8 and timer_time_cumulative < cuda_time*1.2, 'Cumulative CUDATimer imprecise with respect to CUDA time.'
