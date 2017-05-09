@@ -326,14 +326,14 @@ class StreamBatcher(object):
             while self.prefetch_batch_idx < self.loader_threads:
                 self.work.put(self.prefetch_batch_idx)
                 self.prefetch_batch_idx += 1
-        if self.batch_idx + 1 < self.num_batches:
+        if self.batch_idx < self.num_batches:
             batch_parts = self.get_next_batch_parts()
             self.publish_end_of_iter_event()
 
             self.batch_idx += 1
             self.work.put(self.prefetch_batch_idx)
             self.prefetch_batch_idx +=1
-            if self.prefetch_batch_idx + 1 >= self.num_batches:
+            if self.prefetch_batch_idx >= self.num_batches:
                 self.prefetch_batch_idx = 0
 
             return batch_parts

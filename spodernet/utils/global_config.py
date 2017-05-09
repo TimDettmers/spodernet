@@ -48,6 +48,7 @@ class Config:
             name = names[i]
             if name[:2] == '--': continue
             if name not in params2type:
+                log.info('List of possible parameters: {0}', params2type.keys())
                 log.error('Parameter {0} does not exist. Prefix your custom parameters with -- to skip parsing for global config', name)
             values[i] = params2type[name](values[i])
 
