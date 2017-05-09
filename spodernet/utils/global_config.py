@@ -1,5 +1,5 @@
+import os
 from collections import namedtuple
-
 from spodernet.utils.logger import Logger
 log = Logger('global_config.py.txt')
 

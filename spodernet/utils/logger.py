@@ -4,6 +4,7 @@ from os.path import join
 import os
 import datetime
 import numpy as np
+import time
 
 # util functions start
 #
@@ -21,6 +22,9 @@ def make_dirs_if_not_exists(path):
         os.makedirs(path)
 
 # util functions end
+timestr = time.strftime("%Y%m%d-%H%M%S")
+global_logger_path = join(get_logger_path(), 'full_logs', timestr)
+f_global_logger = open(global_logger_path, 'w')
 
 class LogLevel(IntEnum):
     STATISTICAL = 0
@@ -48,6 +52,7 @@ class Logger:
     def __del__(self):
         self.f.close()
         self.f_statistical.close()
+        f_global_logger.close()
 
     def wrap_message(self, message, log_level, *args):
         return '{0} ({2}): {1}'.format(datetime.datetime.now(), message.format(*args), log_level.name)
@@ -98,5 +103,6 @@ class Logger:
             if message.strip() != '':
                 print(message)
                 self.f.write(message + '\n')
+                f_global_logger.write(message + '\n')
 
 
