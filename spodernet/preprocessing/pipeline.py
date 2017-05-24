@@ -14,14 +14,25 @@ log = Logger('pipeline.py.txt')
 t = Timer()
 
 class Pipeline(object):
-    def __init__(self, name, delete_all_previous_data=False, keys=None):
+    def __init__(self, name, delete_all_previous_data=False, keys=None, keys2keys=None):
         self.line_processors = []
         self.text_processors = []
         self.sent_processors = []
         self.token_processors = []
         self.post_processors = []
         self.paths = []
+
         self.keys = keys or ['input', 'support', 'target']
+        if keys2keys is None:
+            keys2keys = {}
+            for key in self.keys:
+                keys2keys[key] = key
+        else:
+            for key in self.keys:
+                if key not in keys2keys:
+                    keys2keys[key] = key
+
+        self.keys2keys = keys2keys
         home = os.environ['HOME']
         self.root = join(home, '.data', name)
         if not os.path.exists(self.root):
@@ -76,6 +87,11 @@ class Pipeline(object):
     def stream_file(self, path):
         log.debug('Processing file {0}'.format(path))
         file_handle = None
+        key2idx = {}
+        for i, key in enumerate(self.keys):
+            if key not in key2idx:
+                key2idx[key] = i
+
         if '.zip' in path:
             path_to_zip, path_to_file = path.split('.zip')
             path_to_zip += '.zip'
@@ -97,7 +113,14 @@ class Pipeline(object):
                 continue
             else:
                 log.debug_once('First line processed by line processors: {0}', line)
-                yield line
+                data = []
+                for key in self.keys:
+                    data_key = self.keys2keys[key]
+                    idx = key2idx[data_key]
+                    data.append(line[idx])
+
+
+                yield data
 
     def clear_processors(self):
         self.post_processors = []

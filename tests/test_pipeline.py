@@ -16,7 +16,7 @@ from io import StringIO
 from spodernet.preprocessing.pipeline import Pipeline
 from spodernet.preprocessing.processors import Tokenizer, SaveStateToList, AddToVocab, ToLower, ConvertTokenToIdx, SaveLengthsToState
 from spodernet.preprocessing.processors import JsonLoaderProcessors, RemoveLineOnJsonValueCondition, DictKey2ListMapper
-from spodernet.preprocessing.processors import StreamToHDF5, CreateBinsByNestedLength
+from spodernet.preprocessing.processors import StreamToHDF5, CreateBinsByNestedLength, DeepSeqMap
 from spodernet.preprocessing.vocab import Vocab
 from spodernet.preprocessing.batching import StreamBatcher, BatcherState
 from spodernet.utils.util import get_data_path, load_hdf_file
@@ -1042,3 +1042,67 @@ def test_hook(hook_name, print_every):
         lower_expected, upper_expected, mean, n2 = calc_confidence_interval(expected_loss)
         del expected_loss[:]
 
+
+def test_variable_duplication():
+    tokenizer = nltk.tokenize.WordPunctTokenizer()
+    pipeline_folder = 'test_pipeline'
+    base_path = join(get_data_path(), pipeline_folder)
+    batch_size = 32
+    func = lambda x: [tag for word, tag in nltk.pos_tag(x)]
+    # clean all data from previous failed tests   
+    if os.path.exists(base_path):
+        shutil.rmtree(base_path)
+
+    # 1. Setup pipeline to save lengths and generate vocabulary
+    keys = ['input', 'support', 'target', 'input_pos']
+    keys2keys = { 'input_pos' : 'input'}
+    p = Pipeline(pipeline_folder, keys=keys, keys2keys=keys2keys)
+    p.add_path(get_test_data_path_dict()['snli'])
+    p.add_line_processor(JsonLoaderProcessors())
+    p.add_sent_processor(Tokenizer(tokenizer.tokenize))
+    p.add_sent_processor(SaveStateToList('tokens'))
+    p.add_post_processor(SaveLengthsToState())
+    p.add_post_processor(DeepSeqMap(func), keys=['input_pos'])
+    p.execute()
+    p.clear_processors()
+
+    # 2. Process the data further to stream it to hdf5
+    p.add_sent_processor(Tokenizer(tokenizer.tokenize))
+    p.add_post_processor(DeepSeqMap(func), keys=['input_pos'])
+    p.add_post_processor(AddToVocab())
+    p.add_post_processor(ConvertTokenToIdx(keys2keys={'input_pos' : 'input_pos'}))
+    p.add_post_processor(SaveStateToList('idx'))
+    # 2 samples per file -> 50 files
+    #p.add_post_processor(StreamToHDF5(data_folder_name, keys=keys))
+    state = p.execute()
+
+    # 2. Load data from the SaveStateToList hook
+    inp_sents = state['data']['tokens']['input']
+    pos_tags = state['data']['idx']['input_pos']
+    vocab = p.state['vocab']['input_pos']
+
+    print(vocab.idx2token)
+    print(pos_tags[0][0])
+
+
+    tags_expected = []
+    for sent in inp_sents:
+        tag_tuples = nltk.pos_tag(sent)
+        tag = [tag for word, tag in tag_tuples]
+        tags_expected.append(tag)
+
+    tags = []
+    for sent in pos_tags[0]:
+        tag = [vocab.get_word(idx) for idx in sent]
+        tags.append(tag)
+
+
+    print(tags[0])
+    print(tags_expected[0])
+    for tags1, tags2 in zip(tags, tags_expected):
+        assert len(tags1) == len(tags2), 'POS tag lengths not the same!'
+        for tag1, tag2 in zip(tags1, tags2):
+            assert tag1 == tag2, 'POS tags were not the same!'
+
+    # 5. clean up
+    shutil.rmtree(base_path)

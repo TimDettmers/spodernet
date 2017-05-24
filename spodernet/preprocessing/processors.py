@@ -159,6 +159,16 @@ class AbstractLoopLevelListOfTokensProcessor(AbstractProcessor):
 
         return ret
 
+
+
+class DeepSeqMap(AbstractLoopLevelListOfTokensProcessor):
+    def __init__(self, func):
+        super(DeepSeqMap, self).__init__()
+        self.func = func
+
+    def process_list_of_tokens(self, data, inp_type):
+        return self.func(data)
+
 class Tokenizer(AbstractProcessor):
     def __init__(self, tokenizer_method):
         super(Tokenizer, self).__init__()
@@ -175,12 +185,12 @@ class NaiveNCharTokenizer(AbstractProcessor):
     def process(self, sentence, inp_type):
         return [sentence[i:i+self.N] for i in range(0, len(sentence), self.N)]
 
-class AddToVocab(AbstractProcessor):
+class AddToVocab(AbstractLoopLevelTokenProcessor):
     def __init__(self, general_vocab_keys=['input', 'support']):
         super(AddToVocab, self).__init__()
         self.general_vocab_keys = set(general_vocab_keys)
 
-    def process(self, token, inp_type):
+    def process_token(self, token, inp_type):
         if inp_type == 'target':
             self.state['vocab']['general'].add_label(token)
             log.statistical('Example vocab target token {0}', 0.01, token)
@@ -584,6 +594,7 @@ class CreateBinsByNestedLength(AbstractLoopLevelListOfTokensProcessor):
         #self.num_samples = total_bin_count/(1.0-wasted_fraction)
 
         return wasted_lengths, bin_by_size
+
 
 
 
