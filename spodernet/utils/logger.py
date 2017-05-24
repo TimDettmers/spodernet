@@ -22,9 +22,26 @@ def make_dirs_if_not_exists(path):
         os.makedirs(path)
 
 # util functions end
-timestr = time.strftime("%Y%m%d-%H%M%S")
-global_logger_path = join(get_logger_path(), 'full_logs', timestr)
-f_global_logger = open(global_logger_path, 'w')
+class GlobalLogger:
+    timestr = None
+    global_logger_path = None
+    f_global_logger = None
+
+    @staticmethod
+    def init():
+        GlobalLogger.timestr = time.strftime("%Y%m%d-%H%M%S")
+        if not os.path.exists(join(get_logger_path(), 'full_logs')):
+            os.mkdir(join(get_logger_path(), 'full_logs'))
+        GlobalLogger.global_logger_path = join(get_logger_path(), 'full_logs', GlobalLogger.timestr +  '.txt')
+        GlobalLogger.f_global_logger = open(GlobalLogger.global_logger_path, 'w')
+
+    @staticmethod
+    def flush():
+        GlobalLogger.f_global_logger.close()
+        GlobalLogger.f_global_logger = open(GlobalLogger.global_logger_path, 'a')
+
+    def __del__(self):
+        GlobalLogger.f_global_logger.close()
 
 class LogLevel(IntEnum):
     STATISTICAL = 0
@@ -52,7 +69,6 @@ class Logger:
     def __del__(self):
         self.f.close()
         self.f_statistical.close()
-        f_global_logger.close()
 
     def wrap_message(self, message, log_level, *args):
         return '{0} ({2}): {1}'.format(datetime.datetime.now(), message.format(*args), log_level.name)
@@ -103,6 +119,7 @@ class Logger:
             if message.strip() != '':
                 print(message)
                 self.f.write(message + '\n')
-                f_global_logger.write(message + '\n')
+                if GlobalLogger.f_global_logger is None: GlobalLogger.init()
+                GlobalLogger.f_global_logger.write(message + '\n')
 
 

@@ -845,7 +845,6 @@ def test_non_random_stream_batcher(samples_per_file, randomize, batch_size):
     # 5. clean up
     shutil.rmtree(base_path)
 
-@pytest.mark.skip(reason='This functionality is not implemented yet, and will not be implemented in the forseeable future.')
 def test_abitrary_input_data():
     tokenizer = nltk.tokenize.WordPunctTokenizer()
     base_path = join(get_data_path(), 'test_keys')
@@ -864,6 +863,8 @@ def test_abitrary_input_data():
             f.write(json.dumps([questions[i], support[i], answer[i], pos_tag[i]]) + '\n')
 
     keys2keys = {}
+    keys2keys['answer'] = 'answer'
+    keys2keys['pos'] = 'pos'
     p = Pipeline('test_keys', keys=['question', 'support', 'answer', 'pos'])
     p.add_path(file_path)
     p.add_line_processor(JsonLoaderProcessors())
@@ -874,7 +875,7 @@ def test_abitrary_input_data():
 
     p.clear_processors()
     p.add_sent_processor(Tokenizer(tokenizer.tokenize))
-    p.add_token_processor(ConvertTokenToIdx(keys=['answer', 'pos']))
+    p.add_token_processor(ConvertTokenToIdx(keys2keys=keys2keys))
     p.add_post_processor(StreamToHDF5('test', keys=['question', 'support', 'answer', 'pos']))
     p.add_post_processor(SaveStateToList('data'))
     state = p.execute()
@@ -886,22 +887,15 @@ def test_abitrary_input_data():
     #vocab is offset by 2, due to UNK and empty word ''
     # note that we travers the data like q1, s1, a1; q2, s2, a2
     # we share vocab between question and support
-    #expected_Q_ids = [[[ 2, 2, 3], [4, 5, 6], [7]], [[12, 13], [14, 5, 15, 16, 17]]]
-    #expected_S_ids = [[[8, 9], [10, 11]], [[18], [19, 20, 21, 22], [23, 24, 25, 17]]]
-    #expected_answer_ids = [[[2],[3],[4, 5]],[[6,7], [2]]]
-    #expected_pos_ids = [[[2],[3]],[[2],[3],[4]]]
+    expected_Q_ids = [[[ 2, 2, 3], [4, 5, 6], [7]], [[12, 13], [14, 5, 15, 16, 17]]]
+    expected_S_ids = [[[8, 9], [10, 11]], [[18], [19, 20, 21, 22], [23, 24, 25, 17]]]
+    expected_answer_ids = [[[2],[3],[4, 5]],[[6,7], [2]]]
+    expected_pos_ids = [[[2],[3]],[[2],[3],[4]]]
 
-    #np.testing.assert_array_equal(np.array(expected_Q_ids), Q)
-    #np.testing.assert_array_equal(np.array(expected_S_ids), S)
-    #np.testing.assert_array_equal(np.array(expected_answer_ids), A)
-    #np.testing.assert_array_equal(np.array(expected_pos_ids), pos)
-
-
-    #batcher = StreamBatcher('test_keys', 'test', 2, loader_threads=1, randomize=False)
-    #del batcher.at_batch_prepared_observers[:] # we want to test on raw numpy data
-    #for q, s, a, pos, idx in batcher:
-    #    print(q)
-    #assert False
+    np.testing.assert_array_equal(np.array(expected_Q_ids), Q)
+    np.testing.assert_array_equal(np.array(expected_S_ids), S)
+    np.testing.assert_array_equal(np.array(expected_answer_ids), A)
+    np.testing.assert_array_equal(np.array(expected_pos_ids), pos)
 
 
 def test_bin_streamer():

@@ -1,7 +1,7 @@
 from __future__ import print_function
 import pytest
 
-from spodernet.utils.logger import Logger, global_logger_path, f_global_logger
+from spodernet.utils.logger import Logger, GlobalLogger
 
 
 
@@ -14,13 +14,15 @@ def test_global_logger():
     log1.info('keken')
 
 
-    del log1
-    del log2
+    GlobalLogger.flush()
 
     expected = ['uden', 'kek', 'rolfen', 'keken']
-    with open(global_logger_path) as f:
+    with open(GlobalLogger.global_logger_path) as f:
         data = f.readlines()
 
+
+
+    print(len(data))
     for i, line in enumerate(data[-4:]):
         message = line.split(':')[3].strip()
         assert message == expected[i]
