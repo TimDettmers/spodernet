@@ -16,7 +16,7 @@ from io import StringIO
 from spodernet.preprocessing.pipeline import Pipeline, DatasetStreamer
 from spodernet.preprocessing.processors import Tokenizer, SaveStateToList, AddToVocab, ToLower, ConvertTokenToIdx, SaveLengthsToState
 from spodernet.preprocessing.processors import JsonLoaderProcessors, RemoveLineOnJsonValueCondition, DictKey2ListMapper
-from spodernet.preprocessing.processors import StreamToHDF5, CreateBinsByNestedLength, DeepSeqMap
+from spodernet.preprocessing.processors import StreamToHDF5, CreateBinsByNestedLength, DeepSeqMap, StreamToBatch
 from spodernet.preprocessing.vocab import Vocab
 from spodernet.preprocessing.batching import StreamBatcher, BatcherState
 from spodernet.utils.util import get_data_path, load_hdf_file
@@ -1120,4 +1120,47 @@ def test_variable_duplication():
             assert tag1 == tag2, 'POS tags were not the same!'
 
     # 5. clean up
+    shutil.rmtree(base_path)
+
+def test_stream_to_batch():
+    tokenizer = nltk.tokenize.WordPunctTokenizer()
+    path = get_test_data_path_dict()['snli']
+    pipeline_folder = 'test_pipeline'
+    base_path = join(get_data_path(), pipeline_folder)
+    if os.path.exists(base_path):
+        shutil.rmtree(base_path)
+
+    s = DatasetStreamer()
+    s.set_path(path)
+    s.add_stream_processor(JsonLoaderProcessors())
+    # 1. setup pipeline
+    p = Pipeline(pipeline_folder)
+    p.add_sent_processor(Tokenizer(tokenizer.tokenize))
+    p.add_token_processor(AddToVocab())
+    p.add_token_processor(ConvertTokenToIdx())
+    p.add_post_processor(SaveStateToList('samples'))
+    state = p.execute(s)
+    p.save_vocabs()
+
+    # testing if we can pass data through a "pre-trained" pipeline and get the right results
+    p2 = Pipeline(pipeline_folder)
+    p2.load_vocabs()
+    p2.add_sent_processor(Tokenizer(tokenizer.tokenize))
+    p2.add_token_processor(ConvertTokenToIdx())
+
+    batcher = StreamToBatch()
+    p2.add_post_processor(batcher)
+    p2.execute(s)
+
+
+    # 2. setup manual sentence -> token processing
+    inp_samples = state['data']['samples']['input']
+    sup_samples = state['data']['samples']['support']
+    str2var = batcher.get_batch()
+
+    for x1, x2, x2len in zip(inp_samples, str2var['input'], str2var['input_length']):
+        np.testing.assert_array_equal(x1[0], x2[:x2len], 'Array length not equal')
+        assert np.sum(x2[x2len:]) == 0, 'Not padded with zeros!'
+        assert x2len == len(x1[0]), 'Lengths not equal!'
+
     shutil.rmtree(base_path)

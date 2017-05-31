@@ -596,6 +596,27 @@ class CreateBinsByNestedLength(AbstractLoopLevelListOfTokensProcessor):
         return wasted_lengths, bin_by_size
 
 
+class StreamToBatch(AbstractLoopLevelListOfTokensProcessor):
+    def __init__(self, keys=['input', 'support', 'target']):
+        super(StreamToBatch, self).__init__()
+        self.str2var = {}
+        self.str2samples = {}
+        for key in keys:
+            self.str2samples[key] = []
 
+    def process_list_of_tokens(self, tokens, inp_type):
+        self.str2samples[inp_type].append(tokens)
+        return tokens
 
+    def get_batch(self):
+        for key, variable in self.str2samples.items():
+            n = len(variable)
+            lengths = [len(tokens) for tokens in variable]
+            max_length = np.max(lengths)
+            x = np.zeros((n, max_length))
+            for row, (l, sample) in enumerate(zip(lengths, variable)):
+                x[row,:l] = sample
 
+            self.str2var[key] = x
+            self.str2var[key + '_length'] = np.array(lengths)
+        return self.str2var
