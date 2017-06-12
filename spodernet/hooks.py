@@ -5,7 +5,7 @@ import datetime
 from spodernet.interfaces import IAtIterEndObservable, IAtEpochEndObservable, IAtEpochStartObservable
 from spodernet.utils.util import Timer
 from spodernet.utils.global_config import Config, Backends
-from spodernet.backends.torchbackend import convert_state
+from spodernet.frontend import convert_state
 
 from spodernet.utils.logger import Logger
 log = Logger('hooks.py.txt')

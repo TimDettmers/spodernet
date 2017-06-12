@@ -70,19 +70,6 @@ class TorchDictConverter(IAtBatchPreparedObservable):
 #
 ######################################
 
-def convert_state(state):
-    if isinstance(state.targets, Variable):
-        state.targets = state.targets.data
-    if isinstance(state.argmax, Variable):
-        state.argmax = state.argmax.data
-    if isinstance(state.pred, Variable):
-        state.pred = state.pred.data
-    if isinstance(state.loss, Variable):
-        state.loss = state.loss.data
-    if isinstance(state.multi_labels, Variable):
-        state.multi_labels = state.multi_labels.data
-
-    return state
 
 def get_list_of_torch_modules(model):
     modules = []
