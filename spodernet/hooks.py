@@ -5,7 +5,6 @@ import datetime
 from spodernet.interfaces import IAtIterEndObservable, IAtEpochEndObservable, IAtEpochStartObservable
 from spodernet.utils.util import Timer
 from spodernet.utils.global_config import Config, Backends
-from spodernet.frontend import convert_state
 
 from spodernet.utils.logger import Logger
 log = Logger('hooks.py.txt')
@@ -29,7 +28,21 @@ class AbstractHook(IAtIterEndObservable, IAtEpochEndObservable):
 
     def load_backend_specific_functions(self):
         if Config.backend == Backends.TORCH:
-            from spodernet.frontend import convert_state
+            from torch.autograd import Variable
+            def convert_state(state):
+                if isinstance(state.targets, Variable):
+                    state.targets = state.targets.data
+                if isinstance(state.argmax, Variable):
+                    state.argmax = state.argmax.data
+                if isinstance(state.pred, Variable):
+                    state.pred = state.pred.data
+                if isinstance(state.loss, Variable):
+                    state.loss = state.loss.data
+                if isinstance(state.multi_labels, Variable):
+                    state.multi_labels = state.multi_labels.data
+
+                return state
+
             self.convert_state = convert_state
         else:
             self.convert_state = lambda x: x
@@ -154,7 +167,7 @@ class LossHook(AbstractHook):
         if Config.backend == Backends.TENSORFLOW:
             return state.loss
         elif Config.backend == Backends.TORCH:
-            state = convert_state(state)
+            state = self.convert_state(state)
             return state.loss[0]
         elif Config.backend == Backends.TEST:
             return state.loss

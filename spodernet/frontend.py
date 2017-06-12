@@ -5,19 +5,6 @@ from spodernet.utils.global_config import Config, Backends
 from spodernet.utils.logger import Logger
 log = Logger('frontend.py.txt')
 
-def convert_state(state):
-    if isinstance(state.targets, Variable):
-        state.targets = state.targets.data
-    if isinstance(state.argmax, Variable):
-        state.argmax = state.argmax.data
-    if isinstance(state.pred, Variable):
-        state.pred = state.pred.data
-    if isinstance(state.loss, Variable):
-        state.loss = state.loss.data
-    if isinstance(state.multi_labels, Variable):
-        state.multi_labels = state.multi_labels.data
-
-    return state
 
 class Model(object):
 
