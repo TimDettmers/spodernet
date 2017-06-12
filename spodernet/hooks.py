@@ -29,7 +29,7 @@ class AbstractHook(IAtIterEndObservable, IAtEpochEndObservable):
 
     def load_backend_specific_functions(self):
         if Config.backend == Backends.TORCH:
-            from spodernet.backends.torchbackend import convert_state
+            from spodernet.frontent import convert_state
             self.convert_state = convert_state
         else:
             self.convert_state = lambda x: x
