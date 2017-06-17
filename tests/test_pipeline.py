@@ -675,9 +675,9 @@ def test_stream_to_hdf5():
     np.testing.assert_array_equal(config_dict['counts'], streamer.config['counts'], 'Counts for HDF5 samples per file not equal!')
     assert len(streamer.config['counts']) > 0, 'List of counts empty!'
 
-    path_types = ['input', 'support', 'input_length', 'support_length', 'target', 'index']
+    path_types = ['input', 'support', 'input_length', 'support_length', 'target', 'target_length', 'index']
     for i, paths in enumerate(streamer.config['paths']):
-        assert len(paths) == 6, 'One path type is missing! Required path types {0}, existing paths {1}.'.format(path_types, paths)
+        assert len(paths) == 7, 'One path type is missing! Required path types {0}, existing paths {1}.'.format(path_types, paths)
 
     # 7. clean up
     shutil.rmtree(base_path)
@@ -847,7 +847,8 @@ def test_non_random_stream_batcher(samples_per_file, randomize, batch_size):
 
     # 4. test data equality
     for epoch in range(epochs):
-        for x, x_len, s, s_len, t, idx in batcher:
+        print(len(batcher.next()))
+        for x, x_len, s, s_len, t, t_len, idx in batcher:
             assert np.int32 == x_len.dtype, 'Input length type should be int32!'
             assert np.int32 == s_len.dtype, 'Support length type should be int32!'
             assert np.int32 == x.dtype, 'Input type should be int32!'

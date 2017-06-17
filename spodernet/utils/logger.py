@@ -54,6 +54,7 @@ class Logger:
     GLOBAL_LOG_LEVEL = LogLevel.INFO
     LOG_PROPABILITY = 0.05
     USE_GLOBAL_STATISTICAL_LOG_PROBABILITY = False
+    PRINT_COUNT = 2
 
     def __init__(self, file_name, write_type='w'):
         path = join(get_logger_path(), file_name)
@@ -64,7 +65,7 @@ class Logger:
         self.f_statistical = open(path_statistical, write_type)
         self.rdm = np.random.RandomState(234234)
         self.debug('Created log file at: {0} with write type: {1}'.format(path, write_type))
-        self.once_set = set()
+        self.once_dict = {}
 
     def __del__(self):
         self.f.close()
@@ -82,14 +83,16 @@ class Logger:
 
     def info_once(self, message, *args):
         if LogLevel.INFO < Logger.GLOBAL_LOG_LEVEL: return
-        if message not in self.once_set:
-            self.once_set.add(message)
+        if message not in self.once_dict: self.once_dict[message] = 0
+        if self.once_dict[message] < Logger.PRINT_COUNT:
+            self.once_dict[message] += 1
             self._log(message, LogLevel.INFO, *args)
 
     def debug_once(self, message, *args):
         if LogLevel.DEBUG < Logger.GLOBAL_LOG_LEVEL: return
-        if message not in self.once_set:
-            self.once_set.add(message)
+        if message not in self.once_dict: self.once_dict[message] = 0
+        if self.once_dict[message] < Logger.PRINT_COUNT:
+            self.once_dict[message] += 1
             self._log(message, LogLevel.DEBUG, *args)
 
     def info(self, message, *args):

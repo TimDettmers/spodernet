@@ -48,20 +48,6 @@ class TorchNegativeSampling(IAtBatchPreparedObservable):
 
         return str2var
 
-class TorchDictConverter(IAtBatchPreparedObservable):
-    def at_batch_prepared(self, batch_parts):
-        str2var = {}
-        str2var['input'] = batch_parts[0]
-        str2var['input_length'] = batch_parts[1]
-        str2var['support'] = batch_parts[2]
-        str2var['support_length'] = batch_parts[3]
-        str2var['target'] = batch_parts[4]
-        str2var['index'] = batch_parts[5]
-        if len(batch_parts) > 6:
-            for i in range(6,len(batch_parts)):
-                str2var['var{0}'.format(i-6)] = batch_parts[i]
-
-        return str2var
 
 
 ######################################

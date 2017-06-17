@@ -4,6 +4,7 @@ import numpy as np
 import cPickle as pickle
 import os
 import simplejson
+import copy
 
 from spodernet.utils.util import get_data_path, write_to_hdf, make_dirs_if_not_exists, load_hdf_file
 from spodernet.interfaces import IAtBatchPreparedObservable
@@ -24,13 +25,36 @@ class KeyToKeyMapper(IAtBatchPreparedObservable):
 
         return new_str2var
 
+class DictConverter(IAtBatchPreparedObservable):
+    def __init__(self, keys=['input', 'support', 'target']):
+        self.keys = keys
+
+    def at_batch_prepared(self, batch_parts):
+        str2var = {}
+        i = 0
+        for key in self.keys:
+            str2var[key] = batch_parts[i]
+            i += 1
+            if i/2 == len(self.keys): break
+            str2var[key+'_length'] = batch_parts[i]
+            i += 1
+
+        str2var['index'] = batch_parts[i]
+        k = 2*len(self.keys)
+        if len(batch_parts) > k:
+            for i in range(k,len(batch_parts)):
+                str2var['var{0}'.format(i-k)] = batch_parts[i]
+
+        return str2var
+
 class TargetIdx2MultiTarget(IAtBatchPreparedObservable):
-    def __init__(self, num_labels):
+    def __init__(self, num_labels, target_index=4):
         self.num_labels = num_labels
+        self.target_index = target_index
 
 
     def at_batch_prepared(self, batch_parts):
-        inp, inp_len, sup, sup_len, t, idx = batch_parts
+        t = batch_parts[self.target_index]
         new_t = np.zeros((Config.batch_size, self.num_labels), dtype=np.int64)
         for i, row in enumerate(t):
             if len(t.shape) == 1:
@@ -39,7 +63,7 @@ class TargetIdx2MultiTarget(IAtBatchPreparedObservable):
                 for col in row:
                     new_t[i, col] = 1
 
-        return [inp, inp_len, sup, sup_len, t, idx, new_t]
+        return batch_parts + [new_t]
 
 
 class ListIndexRemapper(object):
@@ -269,19 +293,19 @@ class SaveLengthsToState(AbstractLoopLevelListOfTokensProcessor):
         return tokens
 
 class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
-    def __init__(self, name, samples_per_file=50000, keys=['input', 'support', 'target'], keys_for_length=['input', 'support']):
+    def __init__(self, name, samples_per_file=50000, keys=['input', 'support', 'target']):
         super(StreamToHDF5, self).__init__()
         self.max_length = None
         self.samples_per_file = samples_per_file
         self.name = name
         self.idx = 0
-        self.keys = keys
+        self.keys = copy.deepcopy(keys)
         if 'index' not in self.keys:
             self.keys.append('index')
         self.shard_id = {}
         self.max_lengths = {}
         self.data = {}
-        for key in keys:
+        for key in self.keys:
             self.shard_id[key] = 0
             self.max_lengths[key] = 0
             self.data[key] = []
@@ -389,13 +413,19 @@ class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
             write_to_hdf(join(self.base_path, file_name_len), X_len)
             self.paths[idx].append(join(self.base_path, file_name_len))
         else:
+            start = idx*self.samples_per_file
+            end = (idx+1)*self.samples_per_file
+            X_len = np.array(self.state['data']['lengths'][inp_type][start:end], dtype=np.int32)
+            file_name_len = inp_type + '_lengths_' + str(idx+1) + '.hdf5'
+            #X_len = X_len[self.shuffle_idx]
+            write_to_hdf(join(self.base_path, file_name_len), X_len)
+            self.paths[idx].append(join(self.base_path, file_name_len))
+
             file_name_index = 'index_' + str(idx+1) + '.hdf5'
             index = np.arange(self.idx - X.shape[0], self.idx, dtype=np.int32)
             #index = index[self.shuffle_idx]
             write_to_hdf(join(self.base_path, file_name_index), index)
             self.paths[idx].append(join(self.base_path, file_name_index))
-
-
 
         self.shard_id[inp_type] += 1
         del self.data[inp_type][:]

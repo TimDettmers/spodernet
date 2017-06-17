@@ -7,6 +7,7 @@ class Backends:
     TORCH = 'pytorch'
     TENSORFLOW = 'tensorflow'
     TEST = 'test'
+    CNTK = 'cntk'
 
 
 class Config:

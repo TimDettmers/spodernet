@@ -12,6 +12,7 @@ from spodernet.utils.util import get_data_path, load_hdf_file, Timer
 from spodernet.utils.global_config import Config, Backends
 from spodernet.hooks import ETAHook
 from spodernet.interfaces import IAtIterEndObservable, IAtEpochEndObservable, IAtEpochStartObservable, IAtBatchPreparedObservable
+from spodernet.preprocessing.processors import DictConverter
 
 from spodernet.utils.logger import Logger
 log = Logger('batching.py.txt')
@@ -40,7 +41,7 @@ class DataLoaderSlave(Thread):
     def __init__(self, stream_batcher, batchidx2paths, batchidx2start_end, randomize=False, paths=None, shard2batchidx=None, seed=None, shard_fractions=None):
         super(DataLoaderSlave, self).__init__()
         if randomize:
-            assert seed is not None, 'For randomized data loadingg a seed needs to be set!'
+            assert seed is not None, 'For randomized data loading a seed needs to be set!'
         self.stream_batcher = stream_batcher
         self.batchidx2paths = batchidx2paths
         self.batchidx2start_end = batchidx2start_end
@@ -179,7 +180,7 @@ class DataLoaderSlave(Thread):
 
 
 class StreamBatcher(object):
-    def __init__(self, pipeline_name, name, batch_size, loader_threads=4, randomize=False, seed=None):
+    def __init__(self, pipeline_name, name, batch_size, loader_threads=4, randomize=False, seed=None, keys=['input', 'support', 'target']):
         config_path = join(get_data_path(), pipeline_name, name, 'hdf5_config.pkl')
         config = pickle.load(open(config_path))
         self.paths = config['paths']
@@ -203,17 +204,19 @@ class StreamBatcher(object):
         self.timer = Timer()
         self.loader_threads = loader_threads
         if Config.backend == Backends.TORCH:
-            from spodernet.backends.torchbackend import TorchConverter, TorchCUDAConverter, TorchDictConverter
+            from spodernet.backends.torchbackend import TorchConverter, TorchCUDAConverter
             self.subscribe_to_batch_prepared_event(TorchConverter())
             if Config.cuda:
                 import torch
                 self.subscribe_to_batch_prepared_event(TorchCUDAConverter(torch.cuda.current_device()))
-            self.subscribe_to_batch_prepared_event(TorchDictConverter())
+            self.subscribe_to_batch_prepared_event(DictConverter(keys))
         elif Config.backend == Backends.TENSORFLOW:
             from spodernet.backends.tfbackend import TensorFlowConverter
             self.subscribe_to_batch_prepared_event(TensorFlowConverter())
         elif Config.backend == Backends.TEST:
             pass
+        elif Config.backend == Backends.CNTK:
+            self.subscribe_to_batch_prepared_event(DictConverter(keys))
         else:
             raise Exception('Backend has unsupported value {0}'.format(Config.backend))
 

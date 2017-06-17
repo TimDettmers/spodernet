@@ -164,12 +164,10 @@ class LossHook(AbstractHook):
         super(LossHook, self).__init__(name, 'Loss', print_every_x_batches)
 
     def calculate_metric(self, state):
-        if Config.backend == Backends.TENSORFLOW:
-            return state.loss
-        elif Config.backend == Backends.TORCH:
+        if Config.backend == Backends.TORCH:
             state = self.convert_state(state)
             return state.loss[0]
-        elif Config.backend == Backends.TEST:
+        else:
             return state.loss
 
 class ETAHook(AbstractHook, IAtEpochStartObservable):
