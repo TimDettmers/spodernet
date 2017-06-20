@@ -35,27 +35,25 @@ class DictConverter(IAtBatchPreparedObservable):
         for key in self.keys:
             str2var[key] = batch_parts[i]
             i += 1
-            if i/2 == len(self.keys): break
+            if i == 2*len(self.keys): break
             str2var[key+'_length'] = batch_parts[i]
             i += 1
 
-        str2var['index'] = batch_parts[i]
-        k = 2*len(self.keys)
-        if len(batch_parts) > k:
-            for i in range(k,len(batch_parts)):
-                str2var['var{0}'.format(i-k)] = batch_parts[i]
+        str2var['index'] = batch_parts[-1]
 
         return str2var
 
 class TargetIdx2MultiTarget(IAtBatchPreparedObservable):
-    def __init__(self, num_labels, target_index=4):
+    def __init__(self, num_labels, variable_name, new_variable_name):
         self.num_labels = num_labels
-        self.target_index = target_index
+        self.variable_name = variable_name
+        self.new_variable_name = new_variable_name
 
 
-    def at_batch_prepared(self, batch_parts):
-        t = batch_parts[self.target_index]
+    def at_batch_prepared(self, str2var):
+        t = str2var[self.variable_name]
         new_t = np.zeros((Config.batch_size, self.num_labels), dtype=np.int64)
+        is_packed_array = isinstance(t[0], np.ndarray)
         for i, row in enumerate(t):
             if len(t.shape) == 1:
                 new_t[i, row] = 1
@@ -63,7 +61,9 @@ class TargetIdx2MultiTarget(IAtBatchPreparedObservable):
                 for col in row:
                     new_t[i, col] = 1
 
-        return batch_parts + [new_t]
+        str2var[self.new_variable_name] = new_t
+
+        return str2var
 
 
 class ListIndexRemapper(object):
@@ -292,6 +292,21 @@ class SaveLengthsToState(AbstractLoopLevelListOfTokensProcessor):
         log.debug_once('Pipeline {1}: A list of tokens: {0}', tokens, self.state['name'])
         return tokens
 
+
+class SaveMaxLengthsToState(AbstractLoopLevelListOfTokensProcessor):
+    def __init__(self):
+        super(SaveMaxLengthsToState, self).__init__()
+
+    def link_with_pipeline(self, state):
+        self.state = state
+        self.state['data']['max_lengths'] = {}
+        self.data = self.state['data']['max_lengths']
+
+    def process_list_of_tokens(self, tokens, inp_type):
+        if inp_type not in self.data: self.data[inp_type] = 0
+        self.data[inp_type] = max(self.data[inp_type], len(tokens))
+        return tokens
+
 class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
     def __init__(self, name, samples_per_file=50000, keys=['input', 'support', 'target']):
         super(StreamToHDF5, self).__init__()
@@ -309,6 +324,7 @@ class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
             self.shard_id[key] = 0
             self.max_lengths[key] = 0
             self.data[key] = []
+
         self.num_samples = None
         self.config = {'paths' : [], 'sample_count' : []}
         self.checked_for_lengths = False
@@ -336,7 +352,10 @@ class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
             self.init_and_checks()
 
         if self.max_lengths[inp_type] == 0:
-            max_length = np.max(self.state['data']['lengths'][inp_type])
+            if 'max_lengths' in self.state['data']:
+                max_length = self.state['data']['max_lengths'][inp_type]
+            else:
+                max_length = np.max(self.state['data']['lengths'][inp_type])
             log.debug('Calculated max length for input type {0} to be {1}', inp_type, max_length)
             self.max_lengths[inp_type] = max_length
             log.statistical('max length of the dataset: {0}', 0.0001, max_length)
@@ -370,6 +389,7 @@ class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
             self.config['fractions'] = fractions.tolist()
             self.config['counts'] = counts.tolist()
             self.config['paths'] = []
+            self.config['max_lengths'] = self.max_lengths
             for i in range(fractions.size):
                 self.config['paths'].append(self.paths[i])
 

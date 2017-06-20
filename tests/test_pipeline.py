@@ -921,6 +921,7 @@ def test_abitrary_input_data():
     np.testing.assert_array_equal(np.array(expected_pos_ids), pos)
 
 
+@pytest.mark.skip(reason='outdated code; remove the bin streamer class?')
 def test_bin_streamer():
     tokenizer = nltk.tokenize.WordPunctTokenizer()
     data_folder_name = 'bin_snli_test'

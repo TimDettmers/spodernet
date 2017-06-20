@@ -186,6 +186,7 @@ class StreamBatcher(object):
         self.paths = config['paths']
         self.fractions = config['fractions']
         self.num_batches = int(np.sum(config['counts']) / batch_size)
+        self.max_lengths = config['max_lengths']
         self.batch_size = batch_size
         self.batch_idx = 0
         self.prefetch_batch_idx = 0
