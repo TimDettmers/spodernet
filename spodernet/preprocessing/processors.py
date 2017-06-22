@@ -56,10 +56,14 @@ class TargetIdx2MultiTarget(IAtBatchPreparedObservable):
         is_packed_array = isinstance(t[0], np.ndarray)
         for i, row in enumerate(t):
             if len(t.shape) == 1:
+            #if len(t.size()) == 1:
                 new_t[i, row] = 1
             else:
                 for col in row:
+                    #print(type(col))
+                    #print(col)
                     new_t[i, col] = 1
+                    break
 
         str2var[self.new_variable_name] = new_t
 

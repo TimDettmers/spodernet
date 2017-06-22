@@ -206,11 +206,11 @@ class StreamBatcher(object):
         self.loader_threads = loader_threads
         if Config.backend == Backends.TORCH:
             from spodernet.backends.torchbackend import TorchConverter, TorchCUDAConverter
+            self.subscribe_to_batch_prepared_event(DictConverter(keys))
             self.subscribe_to_batch_prepared_event(TorchConverter())
             if Config.cuda:
                 import torch
                 self.subscribe_to_batch_prepared_event(TorchCUDAConverter(torch.cuda.current_device()))
-            self.subscribe_to_batch_prepared_event(DictConverter(keys))
         elif Config.backend == Backends.TENSORFLOW:
             from spodernet.backends.tfbackend import TensorFlowConverter
             self.subscribe_to_batch_prepared_event(TensorFlowConverter())

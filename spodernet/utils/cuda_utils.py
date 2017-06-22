@@ -1,3 +1,4 @@
+from __future__ import print_function
 import torch
 from torch.cuda import Event
 
@@ -29,7 +30,7 @@ class CUDATimer(object):
         self.tick(name)
         value = self.cumulative_secs[name]
         if not self.silent:
-            log.info('Time taken for {0}: {1:.8f}s'.format(name, value))
+            print('Time taken for {0}: {1:.8f}s'.format(name, value))
         self.cumulative_secs.pop(name)
         if name in self.current_ticks:
             del self.current_ticks[name]
