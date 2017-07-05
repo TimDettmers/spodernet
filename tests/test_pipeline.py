@@ -16,7 +16,7 @@ from io import StringIO
 from spodernet.preprocessing.pipeline import Pipeline, DatasetStreamer
 from spodernet.preprocessing.processors import Tokenizer, SaveStateToList, AddToVocab, ToLower, ConvertTokenToIdx, SaveLengthsToState
 from spodernet.preprocessing.processors import JsonLoaderProcessors, RemoveLineOnJsonValueCondition, DictKey2ListMapper
-from spodernet.preprocessing.processors import StreamToHDF5, CreateBinsByNestedLength, DeepSeqMap, StreamToBatch
+from spodernet.preprocessing.processors import StreamToHDF5, DeepSeqMap, StreamToBatch
 from spodernet.preprocessing.vocab import Vocab
 from spodernet.preprocessing.batching import StreamBatcher, BatcherState
 from spodernet.utils.util import get_data_path, load_hdf_file
@@ -681,88 +681,6 @@ def test_stream_to_hdf5():
 
     # 7. clean up
     shutil.rmtree(base_path)
-
-
-def test_bin_search():
-    tokenizer = nltk.tokenize.WordPunctTokenizer()
-    data_folder_name = 'snli3k_bins'
-    total_samples = 30000.0
-    base_path = join(get_data_path(), 'test_pipeline', data_folder_name)
-    # clean all data from previous failed tests   
-    if os.path.exists(base_path):
-        shutil.rmtree(base_path)
-
-    s = DatasetStreamer()
-    s.set_path(get_test_data_path_dict()['snli3k'])
-    s.add_stream_processor(JsonLoaderProcessors())
-    # 1. Setup pipeline to save lengths and generate vocabulary
-    p = Pipeline('test_pipeline')
-    p.add_sent_processor(Tokenizer(tokenizer.tokenize))
-    p.add_post_processor(SaveLengthsToState())
-    p.execute(s)
-    p.clear_processors()
-
-    # 2. Execute the binning procedure
-    p.add_sent_processor(Tokenizer(tokenizer.tokenize))
-    p.add_token_processor(AddToVocab())
-    p.add_post_processor(ConvertTokenToIdx())
-    bin_creator = CreateBinsByNestedLength(data_folder_name, min_batch_size=4)
-    p.add_post_processor(bin_creator)
-    state = p.execute(s)
-
-    # 3. We proceed to test if the bin sizes are correct, the config is correct, 
-    #    if the calculated fraction of wasted samples is correct.
-    #    This makes use of the state of the CreateBins class itself which
-    #    thus biases this test. Use statiatical logging for 
-    #    additional verification of correctness.
-
-    # 3.1 Test config equality
-    config_path = join(base_path, 'hdf5_config.pkl')
-    assert os.path.exists(base_path), 'Base path for binning does not exist!'
-    assert os.path.exists(config_path), 'Config file for binning not found!'
-    config_dict = pickle.load(open(config_path))
-    assert 'paths' in config_dict, 'paths key not found in config dict!'
-    assert 'fractions' in config_dict, 'fractions key not found in config dict!'
-    assert 'counts' in config_dict, 'counts key not found in config dict!'
-    for paths1, paths2 in zip(config_dict['paths'], bin_creator.config['paths']):
-        for path1, path2 in zip(paths1, paths2):
-                assert path1 == path2, 'Paths differ from bin config!'
-    np.testing.assert_array_equal(config_dict['fractions'], bin_creator.config['fractions'], 'Fractions for HDF5 samples per file not equal!')
-    np.testing.assert_array_equal(config_dict['counts'], bin_creator.config['counts'], 'Counts for HDF5 samples per file not equal!')
-    assert len(bin_creator.config['counts']) > 0, 'List of counts empty!'
-
-    path_types = ['input', 'support', 'input_length', 'support_length', 'target', 'index']
-    for i, paths in enumerate(bin_creator.config['paths']):
-        assert len(paths) == 6, 'One path type is missing! Required path types {0}, existing paths {1}.'.format(path_types, paths)
-    num_idxs = len(bin_creator.config['paths'])
-    paths_inp = [join(base_path, 'input_bin_{0}.hdf5'.format(i)) for i in range(num_idxs)]
-    paths_sup = [join(base_path, 'support_bin_{0}.hdf5'.format(i)) for i in range(num_idxs)]
-
-    # 3.2 Test length, count and total count equality
-    num_samples_bins = bin_creator.total_bin_count
-    cumulative_count = 0.0
-    for i, (path_inp, path_sup) in enumerate(zip(paths_inp, paths_sup)):
-        inp = load_hdf_file(path_inp)
-        sup = load_hdf_file(path_sup)
-        l1 = bin_creator.config['path2len'][path_inp]
-        l2 = bin_creator.config['path2len'][path_sup]
-        count = bin_creator.config['path2count'][path_sup]
-
-        expected_bin_fraction = count/num_samples_bins
-        actual_bin_fraction = bin_creator.config['fractions'][i]
-
-        assert actual_bin_fraction == expected_bin_fraction, 'Bin fraction for bin {0} not equal'.format(i)
-        assert inp.shape[0] == count, 'Count for input bin at {0} not as expected'.format(path_inp)
-        assert sup.shape[0] == count, 'Count for support bin at {0} not as expected'.format(path_sup)
-        assert inp.shape[1] == l1, 'Input data sequence length for {0} not as expected'.format(path_inp)
-        assert sup.shape[1] == l2, 'Support data sequence length for {0} not as expected'.format(path_sup)
-
-        cumulative_count += count
-
-    assert cumulative_count == num_samples_bins, 'Number of total bin samples not as expected!'
-
-    shutil.rmtree(base_path)
-
 
 batch_size = [17, 128]
 samples_per_file = [500]

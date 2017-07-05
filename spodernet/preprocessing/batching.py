@@ -176,7 +176,6 @@ class DataLoaderSlave(Thread):
                 if benchmark:
                     for i, obs in enumerate(self.stream_batcher.at_batch_prepared_observers):
                         t = self.t.tock(str(i))
-                        print(i, t, type(obs))
 
 
 class StreamBatcher(object):

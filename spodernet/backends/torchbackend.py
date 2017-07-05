@@ -13,7 +13,9 @@ class TorchConverter(IAtBatchPreparedObservable):
     def at_batch_prepared(self, str2var):
         for key in str2var.keys():
             if 'length' in key: continue
-            str2var[key] = Variable(torch.from_numpy(np.int64(str2var[key])))
+            if str2var[key].dtype == np.int32:
+                str2var[key] = np.int64(str2var[key])
+            str2var[key] = Variable(torch.from_numpy(str2var[key]))
         return str2var
 
 class TorchCUDAConverter(IAtBatchPreparedObservable):

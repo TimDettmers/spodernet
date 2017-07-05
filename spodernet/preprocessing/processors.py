@@ -64,8 +64,6 @@ class TargetIdx2MultiTarget(IAtBatchPreparedObservable):
                 new_t[i, row] = 1
             else:
                 for col in row:
-                    #print(type(col))
-                    #print(col)
                     new_t[i, col] = 1
                     break
 
@@ -79,9 +77,7 @@ class VariableLengthSorter(IAtBatchPreparedObservable):
         self.postfix = postfix
 
     def at_batch_prepared(self, str2var):
-        variable = str2var[self.variable_name]
         var_len = str2var[self.variable_name + '_length']
-
         argidx = np.argsort(var_len)[::-1]
 
         for key in str2var.keys():
@@ -192,7 +188,8 @@ class AbstractLoopLevelListOfTokensProcessor(AbstractProcessor):
             level = sample
             while not (isinstance(level, basestring)
                        or isinstance(level, int)
-                       or isinstance(level, np.int32)):
+                       or isinstance(level, np.int32)
+                       or isinstance(level, np.float32)):
                     level = level[0]
                     i+=1
             self.successive_for_loops_to_list_of_tokens = i-1
@@ -251,10 +248,15 @@ class AddToVocab(AbstractLoopLevelTokenProcessor):
         return token
 
 class ToLower(AbstractProcessor):
-    def __init__(self):
+    def __init__(self, exclude_keys=None):
         super(ToLower, self).__init__()
+        self.exclude_keys = exclude_keys
 
     def process(self, token, inp_type):
+        if self.exclude_keys is not None:
+            if inp_type in self.exclude_keys:
+                return token
+
         return token.lower()
 
 
@@ -275,15 +277,11 @@ class ConvertTokenToIdx(AbstractLoopLevelTokenProcessor):
                 return self.state['vocab']['general'].get_idx_label(token)
 
 class ApplyFunction(AbstractProcessor):
-    def __init__(self, func, keys=['input', 'support', 'target']):
+    def __init__(self, func):
         self.func = func
-        self.keys = set(keys)
 
     def process(self, data, inp_type):
-        if inp_type in self.keys:
-            return self.func(data)
-        else:
-            return data
+        return self.func(data)
 
 class SaveStateToList(AbstractProcessor):
     def __init__(self, name):
@@ -380,11 +378,11 @@ class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
 
         if self.datatypes[inp_type] is None:
             if isinstance(tokens[0], float):
-                self.datatypes[inp_type] = np.float
+                self.datatypes[inp_type] = np.float32
             elif isinstance(tokens[0], int):
                 self.datatypes[inp_type] = np.int32
             else:
-                raise ValueError('Unsupported type: {0}'.format(type(tokens[0])))
+                raise ValueError('Unsupported type: {0} for key {1}'.format(type(tokens[0]), inp_type))
 
         if self.max_lengths[inp_type] == 0:
             if 'max_lengths' in self.state['data']:
@@ -434,14 +432,14 @@ class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
 
     def save_to_hdf5(self, inp_type):
         idx = self.shard_id[inp_type]
-        X = np.array(self.data[inp_type], dtype=np.int32)
+        X = np.array(self.data[inp_type], dtype=self.datatypes[inp_type])
         file_name = inp_type + '_' + str(idx+1) + '.hdf5'
         if isinstance(X[0], list):
             new_X = []
             l = len(X[0])
             for i, list_item in enumerate(X):
                 assert l == len(list_item)
-            X = np.array(new_X, dtype=np.int32)
+            X = np.array(new_X, dtype=self.datatypes[inp_type])
             log.debug("{0}", X)
 
         if inp_type == 'input':
@@ -486,199 +484,6 @@ class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
         del self.data[inp_type][:]
 
 
-
-class CreateBinsByNestedLength(AbstractLoopLevelListOfTokensProcessor):
-    def __init__(self, name, min_batch_size=128, bins_of_same_length=True, raise_on_throw_away_fraction=0.2):
-        super(CreateBinsByNestedLength, self).__init__()
-        self.min_batch_size = min_batch_size
-        self.pure_bins = bins_of_same_length
-        self.raise_fraction = raise_on_throw_away_fraction
-        self.length_key2bin_idx = {}
-        self.performed_search = False
-        self.name = name
-        self.inp_type2idx = {'support' : 0, 'input' : 0, 'target' : 0}
-        self.idx2data = {'support' : {}, 'input' : {}, 'target' : {}}
-        self.binidx2data = {'support' : {}, 'input' : {}, 'index' : {}, 'target' : {}}
-        self.binidx2bincount = {}
-        self.binidx2numprocessed = {'support' : {}, 'input' : {}, 'target' : {}}
-
-    def link_with_pipeline(self, state):
-        self.state = state
-        self.base_path = join(self.state['path'], self.name)
-        self.temp_file_path = join(self.base_path, 'remaining_data.tmp')
-        make_dirs_if_not_exists(self.base_path)
-
-    def process_list_of_tokens(self, tokens, inp_type):
-        if 'lengths' not in self.state['data']:
-            log.error(('Do a first pass to produce lengths first, that is use the "SaveLengths" ',
-                       'processor, execute, clean processors, then rerun the pipeline with this module.'))
-        if inp_type not in self.state['data']['lengths']:
-            log.error(('Do a first pass to produce lengths first, that is use the "SaveLengths" ',
-                       'processor, execute, clean processors, then rerun the pipeline with this module.'))
-        if not self.performed_search:
-            self.perform_bin_search()
-
-            assert (   isinstance(tokens[0], int)
-                    or isinstance(tokens[0], np.int32)), \
-                    'Token need to be either int or numpy int for binning to work!'
-
-        idx = self.inp_type2idx[inp_type]
-        self.idx2data[inp_type][idx] = tokens
-
-        if inp_type == 'input' and idx % 10000 == 0:
-            if idx % 50000 == 0:
-                log.info('Processed {0} samples so far...', idx)
-            else:
-                log.debug('Processed {0} samples so far...', idx)
-
-        if idx in self.idx2data['input'] and idx in self.idx2data['support'] and idx in self.idx2data['target']:
-            x1 = self.idx2data['input'][idx]
-            x2 = self.idx2data['support'][idx]
-            t = self.idx2data['target'][idx]
-            l1 = len(x1)
-            l2 = len(x2)
-            key = str(l1) + ',' + str(l2)
-            if key not in self.length_key2bin_idx:
-                self.inp_type2idx[inp_type] += 1
-                return
-            bin_idx = self.length_key2bin_idx[key]
-            self.binidx2data['input'][bin_idx].append(np.array(x1, dtype=np.int32))
-            self.binidx2data['support'][bin_idx].append(np.array(x2, dtype=np.int32))
-            self.binidx2data['index'][bin_idx].append(idx)
-            self.binidx2data['target'][bin_idx].append(np.array(t, dtype=np.int32))
-            self.binidx2numprocessed[bin_idx] += 1
-            self.inp_type2idx[inp_type] += 1
-
-            if (len(self.binidx2data['input']) % 1000 == 0
-               or (self.binidx2numprocessed[bin_idx] == self.binidx2bincount[bin_idx]
-                         and len(self.binidx2data['input'][bin_idx]) > 0)):
-                X_new = np.array(self.binidx2data['input'][bin_idx], dtype=np.int32)
-                S_new = np.array(self.binidx2data['support'][bin_idx], dtype=np.int32)
-                idx_new = np.array(self.binidx2data['index'][bin_idx], dtype=np.int32)
-                t_new = np.array(self.binidx2data['target'][bin_idx], dtype=np.int32)
-                if t_new.shape[1] == 1:
-                    t_new = t_new.reshape(-1)
-
-                pathX = join(self.base_path, 'input_bin_{0}.hdf5'.format(bin_idx))
-                pathS = join(self.base_path, 'support_bin_{0}.hdf5'.format(bin_idx))
-                pathX_len = join(self.base_path, 'input_lengths_bin_{0}.hdf5'.format(bin_idx))
-                pathS_len = join(self.base_path, 'support_lengths_bin_{0}.hdf5'.format(bin_idx))
-                pathIdx = join(self.base_path, 'index_bin_{0}.hdf5'.format(bin_idx))
-                pathT = join(self.base_path, 'target_bin_{0}.hdf5'.format(bin_idx))
-
-                if os.path.exists(pathX):
-                    X_old = load_hdf_file(pathX)
-                    S_old = load_hdf_file(pathS)
-                    idx_old = load_hdf_file(pathIdx)
-                    t_old = load_hdf_file(pathT)
-                    X = np.vstack([X_old, X_new])
-                    S = np.vstack([S_old, S_new])
-                    index = np.vstack([idx_old, idx_new])
-                    T = np.vstack([t_old, t_new])
-                else:
-                    X = X_new
-                    S = S_new
-                    index = idx_new
-                    T = t_new
-
-                write_to_hdf(pathX, X)
-                write_to_hdf(pathS, S)
-                write_to_hdf(pathX_len, np.ones((X.shape[0]), dtype=np.int32)*X.shape[1])
-                write_to_hdf(pathS_len, np.ones((S.shape[0]), dtype=np.int32)*S.shape[1])
-                write_to_hdf(pathIdx, index)
-                write_to_hdf(pathT, T)
-                del self.binidx2data['input'][bin_idx][:]
-                del self.binidx2data['support'][bin_idx][:]
-                del self.binidx2data['index'][bin_idx][:]
-                del self.binidx2data['target'][bin_idx][:]
-
-        else:
-            self.inp_type2idx[inp_type] += 1
-
-        return tokens
-
-
-    def perform_bin_search(self):
-        l1 = np.array(self.state['data']['lengths']['input'], dtype=np.int32)
-        l2 = np.array(self.state['data']['lengths']['support'], dtype=np.int32)
-        if self.pure_bins == False:
-            raise NotImplementedError('Bin search currently only works for bins that feature samples of the same length')
-        if self.pure_bins:
-            self.wasted_lengths, self.length_tuple2bin_size = self.calculate_wastes(l1, l2)
-
-        config = {'paths' : [], 'path2len' : {}, 'path2count' : {}}
-        counts = []
-        for i, ((l1, l2), count) in enumerate(self.length_tuple2bin_size):
-            key = str(l1) + ',' + str(l2)
-            self.length_key2bin_idx[key] = i
-            self.binidx2data['input'][i] = []
-            self.binidx2data['support'][i] = []
-            self.binidx2data['index'][i] = []
-            self.binidx2data['target'][i] = []
-            self.binidx2numprocessed[i] = 0
-            self.binidx2bincount[i] = count
-            counts.append(count)
-            pathX = join(self.base_path, 'input_bin_{0}.hdf5'.format(i))
-            pathS = join(self.base_path, 'support_bin_{0}.hdf5'.format(i))
-            pathX_len = join(self.base_path, 'input_lengths_bin_{0}.hdf5'.format(i))
-            pathS_len = join(self.base_path, 'support_lengths_bin_{0}.hdf5'.format(i))
-            pathIdx = join(self.base_path, 'index_bin_{0}.hdf5'.format(i))
-            pathT = join(self.base_path, 'target_bin_{0}.hdf5'.format(i))
-            config['paths'].append([pathX, pathX_len, pathS, pathS_len, pathT, pathIdx])
-            config['path2len'][pathX] = l1
-            config['path2len'][pathS] = l2
-            config['path2count'][pathX] = count
-            config['path2count'][pathS] = count
-
-        config['fractions'] = (np.float64(np.array(counts)) / np.sum(counts))
-        config['counts'] = counts
-        self.config = config
-        pickle.dump(config, open(join(self.base_path, 'hdf5_config.pkl'), 'w'))
-
-        self.performed_search = True
-
-
-    def calculate_wastes(self, l1, l2):
-        wasted_samples = 0.0
-        # get non-zero bin count, and the lengths corresponding to the bins
-        counts_unfiltered = np.bincount(l1)
-        lengths = np.arange(counts_unfiltered.size)
-        counts = counts_unfiltered[counts_unfiltered > 0]
-        lengths = lengths[counts_unfiltered > 0]
-        indices = np.argsort(counts)
-        # from smallest bin_counts to largest
-        # look how many bins of l2 (support) are smaller than the min_batch_size
-        wasted_lengths = []
-        bin_by_size = []
-        total_bin_count = 0.0
-        for idx in indices:
-            l1_waste = lengths[idx]
-            l2_index = np.where(l1==l1_waste)[0]
-            l2_counts_unfiltered = np.bincount(l2[l2_index])
-            lengths2 = np.arange(l2_counts_unfiltered.size)
-            l2_counts = l2_counts_unfiltered[l2_counts_unfiltered > 0]
-            lengths2 = lengths2[l2_counts_unfiltered > 0]
-            # keep track of the size of nested bins which will be included
-            for length, bin_count in zip(lengths2, l2_counts):
-                if bin_count >= self.min_batch_size:
-                    bin_by_size.append(((l1_waste, length), bin_count))
-                    total_bin_count += bin_count
-            l2_waste = lengths2[l2_counts < self.min_batch_size]
-            wasted_lengths.append([l1_waste, l2_waste])
-            wasted_samples += np.sum(l2_counts[l2_counts < self.min_batch_size])
-        wasted_fraction = wasted_samples / l1.size
-        log.info('Wasted fraction for batch size {0} is {1}', self.min_batch_size, wasted_fraction)
-        if wasted_fraction > self.raise_fraction:
-            str_message = 'Wasted fraction {1}! This is higher than the raise error threshold of {0}!'.format(self.raise_fraction, wasted_fraction)
-            log.error(str_message)
-            raise Exception(str_message)
-
-        # assign this here for testing purposes
-        self.wasted_fraction = wasted_fraction
-        self.total_bin_count = total_bin_count
-        #self.num_samples = total_bin_count/(1.0-wasted_fraction)
-
-        return wasted_lengths, bin_by_size
 
 
 class StreamToBatch(AbstractLoopLevelListOfTokensProcessor):
