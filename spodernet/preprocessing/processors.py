@@ -44,19 +44,23 @@ class DictConverter(IAtBatchPreparedObservable):
         return str2var
 
 class TargetIdx2MultiTarget(IAtBatchPreparedObservable):
-    def __init__(self, num_labels, variable_name, new_variable_name):
+    def __init__(self, num_labels, variable_name, new_variable_name, shape=None):
         self.num_labels = num_labels
         self.variable_name = variable_name
         self.new_variable_name = new_variable_name
+        self.shape = shape
 
 
     def at_batch_prepared(self, str2var):
         t = str2var[self.variable_name]
-        new_t = np.zeros((Config.batch_size, self.num_labels), dtype=np.int64)
+        if self.shape:
+            new_t = np.zeros(self.shape, dtype=np.int64)
+        else:
+            new_t = np.zeros((Config.batch_size, self.num_labels), dtype=np.int64)
         is_packed_array = isinstance(t[0], np.ndarray)
         for i, row in enumerate(t):
-            if len(t.shape) == 1:
-            #if len(t.size()) == 1:
+
+            if (isinstance(t, list) or len(t.shape) == 1):
                 new_t[i, row] = 1
             else:
                 for col in row:
@@ -69,6 +73,23 @@ class TargetIdx2MultiTarget(IAtBatchPreparedObservable):
 
         return str2var
 
+class VariableLengthSorter(IAtBatchPreparedObservable):
+    def __init__(self, variable_name, postfix):
+        self.variable_name = variable_name
+        self.postfix = postfix
+
+    def at_batch_prepared(self, str2var):
+        variable = str2var[self.variable_name]
+        var_len = str2var[self.variable_name + '_length']
+
+        argidx = np.argsort(var_len)[::-1]
+
+        for key in str2var.keys():
+            str2var[key+self.postfix] = str2var[key][argidx]
+            if 'length' in key:
+                str2var[key+self.postfix] = str2var[key][argidx].tolist()
+
+        return str2var
 
 class ListIndexRemapper(object):
     def __init__(self, list_of_new_idx):
@@ -324,10 +345,12 @@ class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
         self.shard_id = {}
         self.max_lengths = {}
         self.data = {}
+        self.datatypes = {}
         for key in self.keys:
             self.shard_id[key] = 0
             self.max_lengths[key] = 0
             self.data[key] = []
+            self.datatypes[key] = None
 
         self.num_samples = None
         self.config = {'paths' : [], 'sample_count' : []}
@@ -355,6 +378,14 @@ class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
         if not self.checked_for_lengths:
             self.init_and_checks()
 
+        if self.datatypes[inp_type] is None:
+            if isinstance(tokens[0], float):
+                self.datatypes[inp_type] = np.float
+            elif isinstance(tokens[0], int):
+                self.datatypes[inp_type] = np.int32
+            else:
+                raise ValueError('Unsupported type: {0}'.format(type(tokens[0])))
+
         if self.max_lengths[inp_type] == 0:
             if 'max_lengths' in self.state['data']:
                 max_length = self.state['data']['max_lengths'][inp_type]
@@ -363,7 +394,7 @@ class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
             log.debug('Calculated max length for input type {0} to be {1}', inp_type, max_length)
             self.max_lengths[inp_type] = max_length
             log.statistical('max length of the dataset: {0}', 0.0001, max_length)
-        x = np.zeros((self.max_lengths[inp_type]), dtype=np.int32)
+        x = np.zeros((self.max_lengths[inp_type]), dtype=self.datatypes[inp_type])
         x[:len(tokens)] = tokens
         if len(tokens) == 1 and self.max_lengths[inp_type] == 1:
             self.data[inp_type].append(x[0])

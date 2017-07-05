@@ -12,6 +12,7 @@ from spodernet.utils.global_config import Config
 class TorchConverter(IAtBatchPreparedObservable):
     def at_batch_prepared(self, str2var):
         for key in str2var.keys():
+            if 'length' in key: continue
             str2var[key] = Variable(torch.from_numpy(np.int64(str2var[key])))
         return str2var
 
@@ -21,6 +22,7 @@ class TorchCUDAConverter(IAtBatchPreparedObservable):
 
     def at_batch_prepared(self, str2var):
         for key in str2var.keys():
+            if 'length' in key: continue
             str2var[key] = str2var[key].cuda(self.device_id, True)
         return str2var
 
@@ -48,34 +50,6 @@ class TorchNegativeSampling(IAtBatchPreparedObservable):
 
         return str2var
 
-
-class TorchTargetIdx2MultiTarget(IAtBatchPreparedObservable):
-    def __init__(self, device_id, num_labels, variable_name, new_variable_name):
-        self.num_labels = num_labels
-        self.variable_name = variable_name
-        self.new_variable_name = new_variable_name
-        self.device_id = device_id
-
-
-    def at_batch_prepared(self, str2var):
-        t = str2var[self.variable_name]
-        new_t = torch.zeros(Config.batch_size, self.num_labels)#np.zeros((Config.batch_size, self.num_labels), dtype=np.int64)
-        for i, row in enumerate(t.data):
-            for idx in t.data[i]:
-                new_t[i, idx] = 1
-            #    print(new_t[i, idx])
-            ##if len(t.shape) == 1:
-            #if len(t.size()) == 1:
-            #    new_t[i, row] = 1
-            #else:
-            #    for col in row:
-            #        new_t[i, col] = 1
-
-        str2var[self.new_variable_name] = Variable(new_t)
-        #if Config.cuda:
-        #    str2var[self.new_variable_name] = str2var[self.new_variable_name].cuda(self.device_id, True)
-
-        return str2var
 
 ######################################
 #
