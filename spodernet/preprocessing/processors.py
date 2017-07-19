@@ -44,11 +44,12 @@ class DictConverter(IAtBatchPreparedObservable):
         return str2var
 
 class TargetIdx2MultiTarget(IAtBatchPreparedObservable):
-    def __init__(self, num_labels, variable_name, new_variable_name, shape=None):
+    def __init__(self, num_labels, variable_name, new_variable_name, shape=None, stop_index=0):
         self.num_labels = num_labels
         self.variable_name = variable_name
         self.new_variable_name = new_variable_name
         self.shape = shape
+        self.stop_index = stop_index
 
 
     def at_batch_prepared(self, str2var):
@@ -61,9 +62,11 @@ class TargetIdx2MultiTarget(IAtBatchPreparedObservable):
 
         for i, row in enumerate(t):
             if (isinstance(t, list) or len(t.shape) == 1):
+                if row == self.stop_index: continue
                 new_t[i, row] = 1
             else:
                 for col in row:
+                    if col == self.stop_index: break
                     new_t[i, col] = 1
 
         str2var[self.new_variable_name] = new_t
