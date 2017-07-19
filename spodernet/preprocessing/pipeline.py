@@ -12,17 +12,22 @@ from spodernet.utils.logger import Logger
 log = Logger('pipeline.py.txt')
 
 t = Timer()
+class StreamMethods:
+    files = 'FILES'
+    data = 'DATA'
 
 class DatasetStreamer(object):
-    def __init__(self, input_keys=None, output_keys=None):
+    def __init__(self, input_keys=None, output_keys=None, stream_method=StreamMethods.files):
         self.stream_processors = []
         self.input_keys = input_keys or ['input', 'support', 'target']
         self.output_keys = output_keys
         self.paths = []
         self.output_keys = output_keys or self.input_keys
+        self.stream_method = stream_method
+        self.data = []
 
-    def add_stream_processor(self, streamp):
-        self.stream_processors.append(streamp)
+    def add_stream_processor(self, stream):
+        self.stream_processors.append(stream)
 
     def set_paths(self, list_of_paths):
         self.paths = list_of_paths
@@ -30,10 +35,20 @@ class DatasetStreamer(object):
     def set_path(self, path):
         self.set_paths([path])
 
+    def set_data(self, data):
+        self.data = [data]
+
     def stream_files(self):
-        for path in self.paths:
-            with open(path) as f:
-                for line in f:
+        if self.stream_method == StreamMethods.files:
+            stream_objects = [open(p) for p in self.paths]
+        elif self.stream_method == StreamMethods.data:
+            stream_objects = self.data
+        else:
+            raise Exception('Unrecognized streaming method')
+
+        try:
+            for obj in stream_objects:
+                for line in obj:
                     filtered = False
                     for streamp in self.stream_processors:
                         line = streamp.process(line)
@@ -53,6 +68,11 @@ class DatasetStreamer(object):
                             data.append(inputkey2data[output_key])
 
                         yield data
+        except Exception, e:
+            if self.stream_method == StreamMethods.files:
+                for fh in stream_objects:
+                    fh.close()
+            raise
 
 class Pipeline(object):
     def __init__(self, name, delete_all_previous_data=False, keys=None):
@@ -121,9 +141,11 @@ class Pipeline(object):
             self.state['vocab'][key].save_to_disk()
 
     def load_vocabs(self):
-        self.state['vocab']['general'].load_from_disk()
+        loaded = True
+        loaded = loaded and self.state['vocab']['general'].load_from_disk()
         for key in self.keys:
-            self.state['vocab'][key].load_from_disk()
+            loaded = loaded and self.state['vocab'][key].load_from_disk()
+        return loaded
 
     def copy_vocab_from_pipeline(self, pipeline_or_vocab, vocab_type=None):
         if isinstance(pipeline_or_vocab, Pipeline):

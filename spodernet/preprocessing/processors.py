@@ -487,16 +487,28 @@ class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
 
 
 class StreamToBatch(AbstractLoopLevelListOfTokensProcessor):
-    def __init__(self, keys=['input', 'support', 'target']):
+    def __init__(self, keys=['input', 'support', 'target'], seed=234234):
         super(StreamToBatch, self).__init__()
         self.str2var = {}
         self.str2samples = {}
+        self.rdm = np.random.RandomState(seed)
         for key in keys:
             self.str2samples[key] = []
 
     def process_list_of_tokens(self, tokens, inp_type):
         self.str2samples[inp_type].append(tokens)
         return tokens
+
+    def shuffle(self):
+        idx = None
+        for key in self.str2samples.keys():
+            if idx is None:
+                variable = self.str2samples[key]
+                idx = np.arange(variable.shape[0])
+                self.rdm.shuffle(idx)
+
+            self.str2samples[key] = variable[idx]
+
 
     def get_batch(self):
         for key, variable in self.str2samples.items():

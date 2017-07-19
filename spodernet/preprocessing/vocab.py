@@ -2,6 +2,9 @@ from collections import Counter
 
 import cPickle as pickle
 import numpy as np
+import os
+import time
+import datetime
 
 '''This models the vocabulary and token embeddings'''
 
@@ -93,5 +96,14 @@ class Vocab(object):
                     pickle.HIGHEST_PROTOCOL)
 
     def load_from_disk(self, name=''):
+        if not os.path.exists(self.path + name):
+            return False
+        timestamp = time.ctime(os.path.getmtime(self.path + name))
+        timestamp = datetime.datetime.strptime(timestamp, '%a %b %d %H:%M:%S %Y')
+        age_in_hours = (datetime.datetime.now() - timestamp).seconds/60./60.
+        if age_in_hours > 12:
+            log.info('Vocabulary outdated: {0}'.format(self.path + name))
+            return False
         log.info('Loading vocab from: {0}'.format(self.path + name))
         self.token2idx, self.idx2token, self.label2idx, self.idx2label = pickle.load(open(self.path))
+        return True
