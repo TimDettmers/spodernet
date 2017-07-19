@@ -509,8 +509,7 @@ class StreamToBatch(AbstractLoopLevelListOfTokensProcessor):
 
             self.str2samples[key] = variable[idx]
 
-
-    def get_batch(self):
+    def get_data(self):
         for key, variable in self.str2samples.items():
             n = len(variable)
             lengths = [len(tokens) for tokens in variable]

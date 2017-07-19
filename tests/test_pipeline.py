@@ -1076,7 +1076,7 @@ def test_stream_to_batch():
     # 2. setup manual sentence -> token processing
     inp_samples = state['data']['samples']['input']
     sup_samples = state['data']['samples']['support']
-    str2var = batcher.get_batch()
+    str2var = batcher.get_data()
 
     for x1, x2, x2len in zip(inp_samples, str2var['input'], str2var['input_length']):
         np.testing.assert_array_equal(x1[0], x2[:x2len], 'Array length not equal')
@@ -1136,8 +1136,8 @@ def test_stream_from_data():
     # 2. setup manual sentence -> token processing
     inp_samples = state['data']['samples']['input']
     sup_samples = state['data']['samples']['support']
-    str2var = batcher.get_batch()
-    str2var2= batcher2.get_batch()
+    str2var = batcher.get_data()
+    str2var2= batcher2.get_data()
 
     for key in str2var.keys():
         assert key in str2var2, 'Data batching method does not result in the same keys!'
