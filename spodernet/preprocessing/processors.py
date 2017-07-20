@@ -57,7 +57,7 @@ class TargetIdx2MultiTarget(IAtBatchPreparedObservable):
         if self.shape:
             new_t = np.zeros(self.shape, dtype=np.int64)
         else:
-            new_t = np.zeros((Config.batch_size, self.num_labels), dtype=np.int64)
+            new_t = np.zeros((t.shape[0], self.num_labels), dtype=np.int64)
         is_packed_array = isinstance(t[0], np.ndarray)
 
         for i, row in enumerate(t):

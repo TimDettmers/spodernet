@@ -16,7 +16,7 @@ from io import StringIO
 from spodernet.preprocessing.pipeline import Pipeline, DatasetStreamer, StreamMethods
 from spodernet.preprocessing.processors import Tokenizer, SaveStateToList, AddToVocab, ToLower, ConvertTokenToIdx, SaveLengthsToState
 from spodernet.preprocessing.processors import JsonLoaderProcessors, RemoveLineOnJsonValueCondition, DictKey2ListMapper
-from spodernet.preprocessing.processors import StreamToHDF5, DeepSeqMap, StreamToBatch
+from spodernet.preprocessing.processors import StreamToHDF5, DeepSeqMap, StreamToBatch, TargetIdx2MultiTarget
 from spodernet.preprocessing.vocab import Vocab
 from spodernet.preprocessing.batching import StreamBatcher, BatcherState
 from spodernet.utils.util import get_data_path, load_hdf_file
@@ -1148,3 +1148,31 @@ def test_stream_from_data():
         np.testing.assert_array_equal(var1, var2, 'Arrays of file and data batching not equal!')
 
     shutil.rmtree(base_path)
+
+
+def test_multitarget_processor():
+
+    classes = 20
+    batch_size = 17
+    max_number_of_classes_per_sample = 10
+    processor = TargetIdx2MultiTarget(classes, 'test', 'test_transformed')
+    for i in range(1):
+        t = np.random.randint(1, classes, size=(batch_size, 10))
+        idx = np.random.randint(1, 10, size=(batch_size,))
+        for i in range(batch_size):
+            t[i,idx[i]:] = 0
+        str2var = {'test' : t}
+    str2var = processor.at_batch_prepared(str2var)
+    assert str2var['test_transformed'].shape == (batch_size, classes), 'Shape of test_transformed incorrect'
+
+
+    expected = np.zeros((17, classes))
+    for i, row in enumerate(t):
+        for col in row:
+            if col == 0: break
+            expected[i, col] = 1
+
+    np.testing.assert_array_equal(expected, str2var['test_transformed'], 'TargetIdx2MultiTarget indexing not working correctly')
+
+
+
