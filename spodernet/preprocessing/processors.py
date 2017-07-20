@@ -5,6 +5,9 @@ import cPickle as pickle
 import os
 import simplejson
 import copy
+import spacy
+
+nlp = spacy.load('en')
 
 from spodernet.utils.util import get_data_path, write_to_hdf, make_dirs_if_not_exists, load_hdf_file
 from spodernet.interfaces import IAtBatchPreparedObservable
@@ -218,8 +221,43 @@ class DeepSeqMap(AbstractLoopLevelListOfTokensProcessor):
         return self.func(data)
 
 class Tokenizer(AbstractProcessor):
-    def __init__(self, tokenizer_method):
+    def __init__(self):
         super(Tokenizer, self).__init__()
+
+    def process(self, sentence, inp_type):
+        return [token.text for token in nlp(unicode(sentence))]
+
+class NERTokenizer(AbstractProcessor):
+    def __init__(self):
+        super(NERTokenizer, self).__init__()
+
+    def process(self, sentence, inp_type):
+        return [token.ent_type_ for token in nlp(unicode(sentence))]
+
+class DependencyParser(AbstractProcessor):
+    def __init__(self):
+        super(DependencyParser, self).__init__()
+
+    def process(self, sentence, inp_type):
+        return [token.dep_ for token in nlp(unicode(sentence))]
+
+class POSTokenizer(AbstractProcessor):
+    def __init__(self):
+        super(POSTokenizer, self).__init__()
+
+    def process(self, sentence, inp_type):
+        return [token.pos_ for token in nlp(unicode(sentence))]
+
+class SentTokenizer(AbstractProcessor):
+    def __init__(self):
+        super(SentTokenizer, self).__init__()
+
+    def process(self, sentence, inp_type):
+        return [sent.text.replace('\n', '') for sent in nlp(unicode(sentence)).sents]
+
+class CustomTokenizer(AbstractProcessor):
+    def __init__(self, tokenizer_method):
+        super(CustomTokenizer, self).__init__()
         self.tokenize = tokenizer_method
 
     def process(self, sentence, inp_type):

@@ -11,12 +11,15 @@ import shutil
 import cPickle as pickle
 import itertools
 import scipy.stats
+import spacy
+
 from io import StringIO
 
 from spodernet.preprocessing.pipeline import Pipeline, DatasetStreamer, StreamMethods
-from spodernet.preprocessing.processors import Tokenizer, SaveStateToList, AddToVocab, ToLower, ConvertTokenToIdx, SaveLengthsToState
+from spodernet.preprocessing.processors import Tokenizer, CustomTokenizer, SaveStateToList, AddToVocab, ToLower, ConvertTokenToIdx, SaveLengthsToState, SentTokenizer
 from spodernet.preprocessing.processors import JsonLoaderProcessors, RemoveLineOnJsonValueCondition, DictKey2ListMapper
 from spodernet.preprocessing.processors import StreamToHDF5, DeepSeqMap, StreamToBatch, TargetIdx2MultiTarget
+from spodernet.preprocessing.processors import NERTokenizer, POSTokenizer, DependencyParser
 from spodernet.preprocessing.vocab import Vocab
 from spodernet.preprocessing.batching import StreamBatcher, BatcherState
 from spodernet.utils.util import get_data_path, load_hdf_file
@@ -110,7 +113,7 @@ def test_tokenization():
     s.add_stream_processor(JsonLoaderProcessors())
     # 1. setup pipeline
     p = Pipeline('test_pipeline')
-    p.add_sent_processor(Tokenizer(tokenizer.tokenize))
+    p.add_sent_processor(CustomTokenizer(tokenizer.tokenize))
     p.add_sent_processor(SaveStateToList('tokens'))
     state = p.execute(s)
 
@@ -141,6 +144,79 @@ def test_tokenization():
             assert token1 == token2, 'Token values differ!'
             log.statistical('a token: {0}', 0.001, token1)
 
+
+def test_sent_tokenizer():
+    path = get_test_data_path_dict()['wiki']
+    sent_tokenizer = nltk.tokenize.PunktSentenceTokenizer()
+
+    s = DatasetStreamer()
+    s.set_path(path)
+    s.add_stream_processor(JsonLoaderProcessors())
+    # 1. setup pipeline
+    p = Pipeline('test_pipeline')
+    p.add_text_processor(SentTokenizer())
+    p.add_post_processor(SaveStateToList('docs'))
+    state = p.execute(s)
+
+    # 2. setup manual sentence -> token processing
+    docs = state['data']['docs']['support']
+
+    docs_nltk = []
+    with open(path) as f:
+        for line in f:
+            sup_sents = []
+            inp, sup, t = json.loads(line)
+            for sent in sent_tokenizer.tokenize(sup):
+                sup_sents.append(sent)
+            docs_nltk.append(sup_sents)
+
+
+    # 3. test equivalence
+    assert len(docs) == len(docs_nltk) == 3, 'Differernt amount of documents'
+    for sents1, sents2 in zip(docs, docs_nltk):
+        assert len(sents1) == len(sents2), 'Sentence count differs!'
+        for sent1, sent2, in zip(sents1, sents2):
+            # index for token level which was skipped
+            assert sent1[0] == sent2, 'Sentence differs!'
+
+
+def test_spacy_tokenizer():
+    tokenizer = nltk.tokenize.WordPunctTokenizer()
+
+    s = DatasetStreamer()
+    s.set_path(get_test_data_path_dict()['snli'])
+    s.add_stream_processor(JsonLoaderProcessors())
+    # 1. setup pipeline
+    p = Pipeline('test_pipeline')
+    p.add_sent_processor(CustomTokenizer(tokenizer.tokenize))
+    p.add_sent_processor(SaveStateToList('tokens'))
+    state = p.execute(s)
+
+    inp_sents = state['data']['tokens']['input']
+    sup_sents = state['data']['tokens']['support']
+    sents = inp_sents + sup_sents
+
+    p.clear_processors()
+    p.add_sent_processor(Tokenizer())
+    p.add_sent_processor(SaveStateToList('tokens_spacy'))
+    state = p.execute(s)
+
+    inp_sents = state['data']['tokens_spacy']['input']
+    sup_sents = state['data']['tokens_spacy']['support']
+    sents_spacy = inp_sents + sup_sents
+
+    # 3. test equality
+    misalignment_count = 0
+    assert len(sents) == len(sents_spacy), 'Sentence count differs!'
+    log.debug('count should be 200: {0}', len(sents))
+    for sent1, sent2 in zip(sents, sents_spacy):
+        assert len(sent1)*0.8 < len(sent2) and len(sent1)*1.2 > len(sent2), 'Token count differs substantially!'
+        for token1, token2 in zip(sent1, sent2):
+            if token1 != token2:
+                misalignment_count +=1
+                break
+    assert misalignment_count < 20, 'To many misalignments between tokenizers!'
+
 def test_path_creation():
     names = []
     for i in range(100):
@@ -163,7 +239,7 @@ def test_vocab():
     s.add_stream_processor(JsonLoaderProcessors())
     # 1. setup pipeline
     p = Pipeline('test_pipeline')
-    p.add_sent_processor(Tokenizer(tokenizer.tokenize))
+    p.add_sent_processor(CustomTokenizer(tokenizer.tokenize))
     p.add_token_processor(AddToVocab())
     state = p.execute(s)
 
@@ -299,7 +375,7 @@ def test_to_lower_token():
     s.add_stream_processor(JsonLoaderProcessors())
     # 1. setup pipeline
     p = Pipeline('test_pipeline')
-    p.add_sent_processor(Tokenizer(tokenizer.tokenize))
+    p.add_sent_processor(CustomTokenizer(tokenizer.tokenize))
     p.add_token_processor(ToLower())
     p.add_token_processor(SaveStateToList('tokens'))
     state = p.execute(s)
@@ -345,7 +421,7 @@ def test_save_to_list_sentences():
     s.add_stream_processor(JsonLoaderProcessors())
     # 1. setup pipeline
     p = Pipeline('test_pipeline')
-    p.add_text_processor(Tokenizer(sent_tokenizer.tokenize))
+    p.add_text_processor(CustomTokenizer(sent_tokenizer.tokenize))
     p.add_sent_processor(SaveStateToList('sents'))
     state = p.execute(s)
 
@@ -383,8 +459,8 @@ def test_save_to_list_post_process():
     s.add_stream_processor(JsonLoaderProcessors())
     # 1. setup pipeline
     p = Pipeline('test_pipeline')
-    p.add_text_processor(Tokenizer(sent_tokenizer.tokenize))
-    p.add_sent_processor(Tokenizer(tokenizer.tokenize))
+    p.add_text_processor(CustomTokenizer(sent_tokenizer.tokenize))
+    p.add_sent_processor(CustomTokenizer(tokenizer.tokenize))
     p.add_post_processor(SaveStateToList('samples'))
     state = p.execute(s)
 
@@ -434,7 +510,7 @@ def test_convert_token_to_idx_no_sentences():
     s.add_stream_processor(JsonLoaderProcessors())
     # 1. setup pipeline
     p = Pipeline('test_pipeline')
-    p.add_sent_processor(Tokenizer(tokenizer.tokenize))
+    p.add_sent_processor(CustomTokenizer(tokenizer.tokenize))
     p.add_token_processor(AddToVocab())
     p.add_post_processor(ConvertTokenToIdx())
     p.add_post_processor(SaveStateToList('idx'))
@@ -533,7 +609,7 @@ def test_save_lengths():
     s.add_stream_processor(JsonLoaderProcessors())
     # 1. setup pipeline
     p = Pipeline('test_pipeline')
-    p.add_sent_processor(Tokenizer(tokenizer.tokenize))
+    p.add_sent_processor(CustomTokenizer(tokenizer.tokenize))
     p.add_post_processor(SaveLengthsToState())
     state = p.execute(s)
 
@@ -575,13 +651,13 @@ def test_stream_to_hdf5():
     s.add_stream_processor(JsonLoaderProcessors())
     # 1. Setup pipeline to save lengths and generate vocabulary
     p = Pipeline(pipeline_folder)
-    p.add_sent_processor(Tokenizer(tokenizer.tokenize))
+    p.add_sent_processor(CustomTokenizer(tokenizer.tokenize))
     p.add_post_processor(SaveLengthsToState())
     p.execute(s)
     p.clear_processors()
 
     # 2. Process the data further to stream it to hdf5
-    p.add_sent_processor(Tokenizer(tokenizer.tokenize))
+    p.add_sent_processor(CustomTokenizer(tokenizer.tokenize))
     p.add_token_processor(AddToVocab())
     p.add_post_processor(ConvertTokenToIdx())
     p.add_post_processor(SaveStateToList('idx'))
@@ -647,7 +723,6 @@ def test_stream_to_hdf5():
     X_len = X_len[index]
     S_len = S_len[index]
     zip_iter = zip([X, S, t, X_len, S_len], [inp_paths, sup_paths, target_paths, inp_len_paths, sup_len_paths ])
-    print(index)
 
     # 5. Compare data
     for data, paths in zip_iter:
@@ -705,13 +780,13 @@ def test_non_random_stream_batcher(samples_per_file, randomize, batch_size):
     s.add_stream_processor(JsonLoaderProcessors())
     # 1. Setup pipeline to save lengths and generate vocabulary
     p = Pipeline(pipeline_folder)
-    p.add_sent_processor(Tokenizer(tokenizer.tokenize))
+    p.add_sent_processor(CustomTokenizer(tokenizer.tokenize))
     p.add_post_processor(SaveLengthsToState())
     p.execute(s)
     p.clear_processors()
 
     # 2. Process the data further to stream it to hdf5
-    p.add_sent_processor(Tokenizer(tokenizer.tokenize))
+    p.add_sent_processor(CustomTokenizer(tokenizer.tokenize))
     p.add_token_processor(AddToVocab())
     p.add_post_processor(ConvertTokenToIdx())
     p.add_post_processor(SaveStateToList('idx'))
@@ -765,7 +840,6 @@ def test_non_random_stream_batcher(samples_per_file, randomize, batch_size):
 
     # 4. test data equality
     for epoch in range(epochs):
-        print(len(batcher.next()))
         for x, x_len, s, s_len, t, t_len, idx in batcher:
             assert np.int32 == x_len.dtype, 'Input length type should be int32!'
             assert np.int32 == s_len.dtype, 'Support length type should be int32!'
@@ -800,7 +874,7 @@ def test_abitrary_input_data():
     keys2keys['pos'] = 'pos'
 
     p = Pipeline('test_keys', keys=['question', 'support', 'answer', 'pos'])
-    p.add_sent_processor(Tokenizer(tokenizer.tokenize))
+    p.add_sent_processor(CustomTokenizer(tokenizer.tokenize))
     p.add_token_processor(AddToVocab(general_vocab_keys=['question', 'support']))
     p.add_post_processor(SaveLengthsToState())
 
@@ -815,7 +889,7 @@ def test_abitrary_input_data():
     p.execute(s)
 
     p.clear_processors()
-    p.add_sent_processor(Tokenizer(tokenizer.tokenize))
+    p.add_sent_processor(CustomTokenizer(tokenizer.tokenize))
     p.add_token_processor(ConvertTokenToIdx(keys2keys=keys2keys))
     p.add_post_processor(StreamToHDF5('test', keys=['question', 'support', 'answer', 'pos']))
     p.add_post_processor(SaveStateToList('data'))
@@ -855,13 +929,13 @@ def test_bin_streamer():
     s.add_stream_processor(JsonLoaderProcessors())
     # 1. Setup pipeline to save lengths and generate vocabulary
     p = Pipeline(pipeline_folder)
-    p.add_sent_processor(Tokenizer(tokenizer.tokenize))
+    p.add_sent_processor(CustomTokenizer(tokenizer.tokenize))
     p.add_post_processor(SaveLengthsToState())
     p.execute(s)
     p.clear_processors()
 
     # 2. Process the data further to stream it to hdf5
-    p.add_sent_processor(Tokenizer(tokenizer.tokenize))
+    p.add_sent_processor(CustomTokenizer(tokenizer.tokenize))
     p.add_token_processor(AddToVocab())
     p.add_post_processor(ConvertTokenToIdx())
     p.add_post_processor(SaveStateToList('idx'))
@@ -974,7 +1048,6 @@ def test_hook(hook_name, print_every):
             lower, upper, m, n = hook.at_end_of_iter_event(state)
             if (i+1) % print_every == 0:
                 lower_expected, upper_expected, mean, n2 = calc_confidence_interval(expected_loss)
-                print(i, epoch)
                 assert n == n2, 'Sample size not equal!'
                 assert np.allclose(m, mean), 'Mean not equal!'
                 assert np.allclose(lower, lower_expected), 'Lower confidence bound not equal!'
@@ -1002,13 +1075,13 @@ def test_variable_duplication():
     # 1. Setup pipeline to save lengths and generate vocabulary
     keys = ['input', 'support', 'target', 'input_pos']
     p = Pipeline(pipeline_folder, keys=keys)
-    p.add_sent_processor(Tokenizer(tokenizer.tokenize))
+    p.add_sent_processor(CustomTokenizer(tokenizer.tokenize))
     p.add_sent_processor(SaveStateToList('tokens'))
     p.execute(s)
     p.clear_processors()
 
     # 2. Process the data further to stream it to hdf5
-    p.add_sent_processor(Tokenizer(tokenizer.tokenize))
+    p.add_sent_processor(CustomTokenizer(tokenizer.tokenize))
     p.add_post_processor(DeepSeqMap(func), keys=['input_pos'])
     p.add_post_processor(AddToVocab())
     p.add_post_processor(ConvertTokenToIdx(keys2keys={'input_pos' : 'input_pos'}))
@@ -1029,7 +1102,6 @@ def test_variable_duplication():
 
     tags = []
     for sent in pos_tags[0]:
-        print(sent)
         tag = [vocab.get_word(idx) for idx in sent]
         tags.append(tag)
 
@@ -1055,7 +1127,7 @@ def test_stream_to_batch():
     s.add_stream_processor(JsonLoaderProcessors())
     # 1. setup pipeline
     p = Pipeline(pipeline_folder)
-    p.add_sent_processor(Tokenizer(tokenizer.tokenize))
+    p.add_sent_processor(CustomTokenizer(tokenizer.tokenize))
     p.add_token_processor(AddToVocab())
     p.add_token_processor(ConvertTokenToIdx())
     p.add_post_processor(SaveStateToList('samples'))
@@ -1065,7 +1137,7 @@ def test_stream_to_batch():
     # testing if we can pass data through a "pre-trained" pipeline and get the right results
     p2 = Pipeline(pipeline_folder)
     p2.load_vocabs()
-    p2.add_sent_processor(Tokenizer(tokenizer.tokenize))
+    p2.add_sent_processor(CustomTokenizer(tokenizer.tokenize))
     p2.add_token_processor(ConvertTokenToIdx())
 
     batcher = StreamToBatch()
@@ -1099,7 +1171,7 @@ def test_stream_from_data():
     s.add_stream_processor(JsonLoaderProcessors())
     # 1. setup pipeline
     p = Pipeline(pipeline_folder)
-    p.add_sent_processor(Tokenizer(tokenizer.tokenize))
+    p.add_sent_processor(CustomTokenizer(tokenizer.tokenize))
     p.add_token_processor(AddToVocab())
     p.add_token_processor(ConvertTokenToIdx())
     p.add_post_processor(SaveStateToList('samples'))
@@ -1109,7 +1181,7 @@ def test_stream_from_data():
     # testing if we can pass data through a "pre-trained" pipeline and get the right results
     p2 = Pipeline(pipeline_folder)
     p2.load_vocabs()
-    p2.add_sent_processor(Tokenizer(tokenizer.tokenize))
+    p2.add_sent_processor(CustomTokenizer(tokenizer.tokenize))
     p2.add_token_processor(ConvertTokenToIdx())
 
     batcher = StreamToBatch()
@@ -1125,7 +1197,7 @@ def test_stream_from_data():
     s2.add_stream_processor(JsonLoaderProcessors())
     p3 = Pipeline(pipeline_folder)
     p3.load_vocabs()
-    p3.add_sent_processor(Tokenizer(tokenizer.tokenize))
+    p3.add_sent_processor(CustomTokenizer(tokenizer.tokenize))
     p3.add_token_processor(ConvertTokenToIdx())
 
     batcher2 = StreamToBatch()
@@ -1151,7 +1223,6 @@ def test_stream_from_data():
 
 
 def test_multitarget_processor():
-
     classes = 20
     batch_size = 17
     max_number_of_classes_per_sample = 10
@@ -1175,4 +1246,39 @@ def test_multitarget_processor():
     np.testing.assert_array_equal(expected, str2var['test_transformed'], 'TargetIdx2MultiTarget indexing not working correctly')
 
 
+test_data = [(lambda x: x.ent_type_, NERTokenizer),
+             (lambda x: x.pos_, POSTokenizer),
+             (lambda x: x.dep_, DependencyParser)]
+ids = ['NER', 'POS', 'DEP']
+@pytest.mark.parametrize("spacy_func, class_value", test_data, ids=ids)
+def test_spacy_tokenization(spacy_func, class_value):
+    nlp = spacy.load('en')
+    s = DatasetStreamer()
+    s.set_path(get_test_data_path_dict()['snli'])
+    s.add_stream_processor(JsonLoaderProcessors())
+    # 1. setup pipeline
+    p = Pipeline('test_pipeline')
+    p.add_sent_processor(class_value())
+    p.add_sent_processor(SaveStateToList('tokens'))
+    state = p.execute(s)
 
+    inp_sents = state['data']['tokens']['input']
+    sup_sents = state['data']['tokens']['support']
+    sents = inp_sents + sup_sents
+
+    # 2. setup nltk tokenization
+    with open(get_test_data_path_dict()['snli']) as f:
+        tokenized_sents = {'input' : [], 'support' : []}
+        for line in f:
+            inp, sup, t = json.loads(line)
+            tokenized_sents['input'].append([ spacy_func(token) for token in nlp(unicode(inp))])
+            tokenized_sents['support'].append([ spacy_func(token) for token in nlp(unicode(sup))])
+
+    sents_nltk = tokenized_sents['input'] + tokenized_sents['support']
+    # 3. test equality
+    assert len(sents) == len(sents_nltk), 'Sentence count differs!'
+    log.debug('count should be 200: {0}', len(sents))
+    for sent1, sent2 in zip(sents, sents_nltk):
+        assert len(sent1) == len(sent2), 'Entity count differs!'
+        for token1, token2 in zip(sent1, sent2):
+            assert token1 == token2, 'Entity token values differ!'
