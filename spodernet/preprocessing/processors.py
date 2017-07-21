@@ -46,6 +46,7 @@ class DictConverter(IAtBatchPreparedObservable):
 
         return str2var
 
+
 class TargetIdx2MultiTarget(IAtBatchPreparedObservable):
     def __init__(self, num_labels, variable_name, new_variable_name, shape=None, stop_index=0):
         self.num_labels = num_labels
@@ -210,7 +211,45 @@ class AbstractLoopLevelListOfTokensProcessor(AbstractProcessor):
 
         return ret
 
+class TfidfFitter(AbstractProcessor):
+    def __init__(self):
+        super(TfidfFitter, self).__init__()
 
+    def link_with_pipeline(self, state):
+        self.tfidf = state['tfidf']
+        state['tfidf_data'] = {}
+        self.data = state['tfidf_data']
+
+    def process(self, data, inp_type):
+        if inp_type not in self.data: self.data[inp_type] = []
+        self.data[inp_type].append(data)
+        return data
+
+class TfidfTransformer(AbstractLoopLevelListOfTokensProcessor):
+    def __init__(self):
+        super(TfidfTransformer, self).__init__()
+        self.fitted = set()
+
+    def link_with_pipeline(self, state):
+        self.tfidf = state['tfidf']
+        self.data = state['tfidf_data']
+
+    def process(self, list_of_token, inp_type):
+        if inp_type not in self.fitted:
+            self.tfidf[inp_type].fit(self.data[inp_type])
+            self.fitted.add(inp_type)
+        doc = ' '.join(list_of_token)
+        X = self.tfidf[inp_type].transform([doc])
+        weights = []
+        vocab = self.tfidf[inp_type].vocabulary_
+        for token in list_of_token:
+            if token in vocab:
+                idx = self.tfidf[inp_type].vocabulary_[token]
+                weights.append(X[0, idx])
+            else:
+                weights.append(0.0)
+
+        return weights
 
 class DeepSeqMap(AbstractLoopLevelListOfTokensProcessor):
     def __init__(self, func):

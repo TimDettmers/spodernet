@@ -7,6 +7,7 @@ import zipfile
 
 from spodernet.preprocessing.vocab import Vocab
 from spodernet.utils.util import Timer
+from sklearn.feature_extraction.text import TfidfVectorizer
 
 from spodernet.utils.logger import Logger
 log = Logger('pipeline.py.txt')
@@ -84,6 +85,7 @@ class Pipeline(object):
         self.keys = keys or ['input', 'support', 'target']
         home = os.environ['HOME']
         self.root = join(home, '.data', name)
+        self.tfidf = TfidfVectorizer()
 
         if not os.path.exists(self.root):
             log.debug_once('Pipeline path {0} does not exist. Creating folder...', self.root)
@@ -99,9 +101,12 @@ class Pipeline(object):
 
         self.state = {'name' : name, 'home' : home, 'path' : self.root, 'data' : {}}
         self.state['vocab'] = {}
+        self.state['tfidf'] = {}
         self.state['vocab']['general'] = Vocab(path=join(self.root, 'vocab'))
+        self.state['tfidf']['general'] = TfidfVectorizer(stop_words=[])
         for key in self.keys:
             self.state['vocab'][key] = Vocab(path=join(self.root, 'vocab_'+key))
+            self.state['tfidf'][key] = TfidfVectorizer(stop_words=[])
 
     def add_text_processor(self, text_processor, keys=None):
         keys = keys or self.keys

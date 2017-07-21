@@ -14,12 +14,13 @@ import scipy.stats
 import spacy
 
 from io import StringIO
+from sklearn.feature_extraction.text import TfidfVectorizer
 
 from spodernet.preprocessing.pipeline import Pipeline, DatasetStreamer, StreamMethods
 from spodernet.preprocessing.processors import Tokenizer, CustomTokenizer, SaveStateToList, AddToVocab, ToLower, ConvertTokenToIdx, SaveLengthsToState, SentTokenizer
 from spodernet.preprocessing.processors import JsonLoaderProcessors, RemoveLineOnJsonValueCondition, DictKey2ListMapper
 from spodernet.preprocessing.processors import StreamToHDF5, DeepSeqMap, StreamToBatch, TargetIdx2MultiTarget
-from spodernet.preprocessing.processors import NERTokenizer, POSTokenizer, DependencyParser
+from spodernet.preprocessing.processors import NERTokenizer, POSTokenizer, DependencyParser, TfidfFitter, TfidfTransformer
 from spodernet.preprocessing.vocab import Vocab
 from spodernet.preprocessing.batching import StreamBatcher, BatcherState
 from spodernet.utils.util import get_data_path, load_hdf_file
@@ -1282,3 +1283,75 @@ def test_spacy_tokenization(spacy_func, class_value):
         assert len(sent1) == len(sent2), 'Entity count differs!'
         for token1, token2 in zip(sent1, sent2):
             assert token1 == token2, 'Entity token values differ!'
+
+def test_tfidf():
+    s = DatasetStreamer()
+    s.set_path(get_test_data_path_dict()['snli'])
+    s.add_stream_processor(JsonLoaderProcessors())
+    # 1. setup pipeline
+    p = Pipeline('test_pipeline')
+    p.add_sent_processor(TfidfFitter())
+    p.add_sent_processor(ToLower())
+    p.add_sent_processor(Tokenizer())
+    p.add_sent_processor(SaveStateToList('tokens'))
+    state = p.execute(s)
+
+    p.clear_processors()
+    p.add_sent_processor(ToLower())
+    p.add_sent_processor(Tokenizer())
+    p.add_sent_processor(TfidfTransformer())
+    p.add_sent_processor(SaveStateToList('tfidf'))
+    state = p.execute(s)
+
+
+    inp_tokens = state['data']['tokens']['input']
+    sup_tokens = state['data']['tokens']['support']
+    tfidf_inp_tokens = state['data']['tfidf']['input']
+    tfidf_sup_tokens = state['data']['tfidf']['support']
+
+    # 2. setup tfidf vectorization
+    sup_tfidf = TfidfVectorizer()
+    inp_tfidf = TfidfVectorizer()
+    inps = []
+    sups = []
+
+    with open(get_test_data_path_dict()['snli']) as f:
+        tokenized_sents = {'input' : [], 'support' : []}
+        for line in f:
+            inp, sup, t = json.loads(line)
+            inps.append(inp)
+            sups.append(sup)
+
+    sups_transformed = sup_tfidf.fit_transform(sups)
+    inps_transformed = inp_tfidf.fit_transform(inps)
+
+    weighted_inp_docs = []
+    weighted_sup_docs = []
+    for i, (doc1, doc2) in enumerate(zip(inp_tokens, sup_tokens)):
+        weights = []
+        for token in doc1:
+            if token in inp_tfidf.vocabulary_:
+                weights.append(inps_transformed[i, inp_tfidf.vocabulary_[token]])
+            else:
+                weights.append(0.0)
+        weighted_inp_docs.append(weights)
+
+        weights = []
+        for token in doc2:
+            if token in sup_tfidf.vocabulary_:
+                weights.append(sups_transformed[i, sup_tfidf.vocabulary_[token]])
+            else:
+                weights.append(0.0)
+        weighted_sup_docs.append(weights)
+
+    assert len(weighted_inp_docs) == len(tfidf_inp_tokens), 'Different amount of "documents"'
+    for doc1, doc2, in zip(weighted_inp_docs, tfidf_inp_tokens):
+        assert len(doc1) == len(doc2), 'Documents have differernt length!'
+        for num1, num2 in zip(doc1, doc2):
+            assert np.round(num1, 7) == np.round(num2, 7), 'Tfidf values are different!'
+
+    assert len(weighted_sup_docs) == len(tfidf_sup_tokens), 'Different amount of "documents"'
+    for doc1, doc2, in zip(weighted_sup_docs, tfidf_sup_tokens):
+        assert len(doc1) == len(doc2), 'Documents have differernt length!'
+        for num1, num2 in zip(doc1, doc2):
+            assert np.round(num1, 7) == np.round(num2, 7), 'Tfidf values are different!'
