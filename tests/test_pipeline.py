@@ -652,14 +652,9 @@ def test_stream_to_hdf5():
     s.add_stream_processor(JsonLoaderProcessors())
     # 1. Setup pipeline to save lengths and generate vocabulary
     p = Pipeline(pipeline_folder)
+    p.add_token_processor(AddToVocab())
     p.add_sent_processor(CustomTokenizer(tokenizer.tokenize))
     p.add_post_processor(SaveLengthsToState())
-    p.execute(s)
-    p.clear_processors()
-
-    # 2. Process the data further to stream it to hdf5
-    p.add_sent_processor(CustomTokenizer(tokenizer.tokenize))
-    p.add_token_processor(AddToVocab())
     p.add_post_processor(ConvertTokenToIdx())
     p.add_post_processor(SaveStateToList('idx'))
     # 2 samples per file -> 50 files
@@ -781,14 +776,9 @@ def test_non_random_stream_batcher(samples_per_file, randomize, batch_size):
     s.add_stream_processor(JsonLoaderProcessors())
     # 1. Setup pipeline to save lengths and generate vocabulary
     p = Pipeline(pipeline_folder)
+    p.add_token_processor(AddToVocab())
     p.add_sent_processor(CustomTokenizer(tokenizer.tokenize))
     p.add_post_processor(SaveLengthsToState())
-    p.execute(s)
-    p.clear_processors()
-
-    # 2. Process the data further to stream it to hdf5
-    p.add_sent_processor(CustomTokenizer(tokenizer.tokenize))
-    p.add_token_processor(AddToVocab())
     p.add_post_processor(ConvertTokenToIdx())
     p.add_post_processor(SaveStateToList('idx'))
     # 2 samples per file -> 50 files
@@ -888,7 +878,6 @@ def test_abitrary_input_data():
     s.add_stream_processor(JsonLoaderProcessors())
 
     p.execute(s)
-
     p.clear_processors()
     p.add_sent_processor(CustomTokenizer(tokenizer.tokenize))
     p.add_token_processor(ConvertTokenToIdx(keys2keys=keys2keys))
@@ -1078,11 +1067,6 @@ def test_variable_duplication():
     p = Pipeline(pipeline_folder, keys=keys)
     p.add_sent_processor(CustomTokenizer(tokenizer.tokenize))
     p.add_sent_processor(SaveStateToList('tokens'))
-    p.execute(s)
-    p.clear_processors()
-
-    # 2. Process the data further to stream it to hdf5
-    p.add_sent_processor(CustomTokenizer(tokenizer.tokenize))
     p.add_post_processor(DeepSeqMap(func), keys=['input_pos'])
     p.add_post_processor(AddToVocab())
     p.add_post_processor(ConvertTokenToIdx(keys2keys={'input_pos' : 'input_pos'}))
@@ -1294,11 +1278,6 @@ def test_tfidf():
     p.add_sent_processor(ToLower())
     p.add_sent_processor(Tokenizer())
     p.add_sent_processor(SaveStateToList('tokens'))
-    state = p.execute(s)
-
-    p.clear_processors()
-    p.add_sent_processor(ToLower())
-    p.add_sent_processor(Tokenizer())
     p.add_sent_processor(TfidfTransformer())
     p.add_sent_processor(SaveStateToList('tfidf'))
     state = p.execute(s)

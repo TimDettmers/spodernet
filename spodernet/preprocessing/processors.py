@@ -133,6 +133,7 @@ class DictKey2ListMapper(object):
 class AbstractProcessor(object):
     def __init__(self):
         self.state = None
+        self.execution_state = set(['fit', 'transform'])
         pass
 
     def link_with_pipeline(self, state):
@@ -146,6 +147,7 @@ class AbstractLoopLevelTokenProcessor(AbstractProcessor):
     def __init__(self):
         super(AbstractLoopLevelTokenProcessor, self).__init__()
         self.successive_for_loops_to_tokens = None
+        self.execution_state = set(['fit', 'transform'])
 
     def process_token(self, token, inp_type):
         raise NotImplementedError('Classes that inherit from AbstractLoopLevelTokenProcessor need to implement the process_token method ')
@@ -184,6 +186,7 @@ class AbstractLoopLevelListOfTokensProcessor(AbstractProcessor):
     def __init__(self):
         super(AbstractLoopLevelListOfTokensProcessor, self).__init__()
         self.successive_for_loops_to_list_of_tokens = None
+        self.execution_state = set(['fit', 'transform'])
 
     def process_list_of_tokens(self, tokens, inp_type):
         raise NotImplementedError('Classes that inherit from AbstractLoopLevelListOfTokensProcessor need to implement the process_list_of_tokens method ')
@@ -214,6 +217,7 @@ class AbstractLoopLevelListOfTokensProcessor(AbstractProcessor):
 class TfidfFitter(AbstractProcessor):
     def __init__(self):
         super(TfidfFitter, self).__init__()
+        self.execution_state = set(['fit'])
 
     def link_with_pipeline(self, state):
         self.tfidf = state['tfidf']
@@ -229,6 +233,7 @@ class TfidfTransformer(AbstractLoopLevelListOfTokensProcessor):
     def __init__(self):
         super(TfidfTransformer, self).__init__()
         self.fitted = set()
+        self.execution_state = set(['transform'])
 
     def link_with_pipeline(self, state):
         self.tfidf = state['tfidf']
@@ -269,6 +274,7 @@ class Tokenizer(AbstractProcessor):
 class NERTokenizer(AbstractProcessor):
     def __init__(self):
         super(NERTokenizer, self).__init__()
+        self.execution_state = set(['transform'])
 
     def process(self, sentence, inp_type):
         return [token.ent_type_ for token in nlp(unicode(sentence))]
@@ -276,6 +282,7 @@ class NERTokenizer(AbstractProcessor):
 class DependencyParser(AbstractProcessor):
     def __init__(self):
         super(DependencyParser, self).__init__()
+        self.execution_state = set(['transform'])
 
     def process(self, sentence, inp_type):
         return [token.dep_ for token in nlp(unicode(sentence))]
@@ -283,6 +290,7 @@ class DependencyParser(AbstractProcessor):
 class POSTokenizer(AbstractProcessor):
     def __init__(self):
         super(POSTokenizer, self).__init__()
+        self.execution_state = set(['transform'])
 
     def process(self, sentence, inp_type):
         return [token.pos_ for token in nlp(unicode(sentence))]
@@ -314,6 +322,7 @@ class AddToVocab(AbstractLoopLevelTokenProcessor):
     def __init__(self, general_vocab_keys=['input', 'support']):
         super(AddToVocab, self).__init__()
         self.general_vocab_keys = set(general_vocab_keys)
+        self.execution_state = set(['fit'])
 
     def process_token(self, token, inp_type):
         if inp_type == 'target':
@@ -343,6 +352,7 @@ class ConvertTokenToIdx(AbstractLoopLevelTokenProcessor):
     def __init__(self, keys2keys=None):
         super(ConvertTokenToIdx, self).__init__()
         self.keys2keys = keys2keys #maps key to other key, for example encode inputs with support vocabulary
+        self.execution_state = set(['transform'])
 
     def process_token(self, token, inp_type):
         if not self.keys2keys is None and inp_type in self.keys2keys:
@@ -366,6 +376,7 @@ class SaveStateToList(AbstractProcessor):
     def __init__(self, name):
         super(SaveStateToList, self).__init__()
         self.name = name
+        self.execution_state = set(['transform'])
 
     def link_with_pipeline(self, state):
         self.state = state
@@ -381,6 +392,7 @@ class SaveStateToList(AbstractProcessor):
 class SaveLengthsToState(AbstractLoopLevelListOfTokensProcessor):
     def __init__(self):
         super(SaveLengthsToState, self).__init__()
+        self.execution_state = set(['fit'])
 
     def link_with_pipeline(self, state):
         self.state = state
@@ -412,6 +424,7 @@ class SaveMaxLengthsToState(AbstractLoopLevelListOfTokensProcessor):
 class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
     def __init__(self, name, samples_per_file=50000, keys=['input', 'support', 'target']):
         super(StreamToHDF5, self).__init__()
+        self.execution_state = set(['transform'])
         self.max_length = None
         self.samples_per_file = samples_per_file
         self.name = name
@@ -568,6 +581,7 @@ class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
 class StreamToBatch(AbstractLoopLevelListOfTokensProcessor):
     def __init__(self, keys=['input', 'support', 'target'], seed=234234):
         super(StreamToBatch, self).__init__()
+        self.execution_state = set(['transform'])
         self.str2var = {}
         self.str2samples = {}
         self.rdm = np.random.RandomState(seed)

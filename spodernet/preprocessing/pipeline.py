@@ -174,34 +174,39 @@ class Pipeline(object):
 
     def execute(self, data_streamer):
         '''Tokenizes the data, calcs the max length, and creates a vocab.'''
-        for var in data_streamer.stream_files():
-            for filter_keys, textp in self.text_processors:
-                for i, key in enumerate(self.keys):
-                    if key in filter_keys:
-                        var[i] = textp.process(var[i], inp_type=key)
+        for execution_state in ['fit', 'transform']:
+            for var in data_streamer.stream_files():
+                for filter_keys, textp in self.text_processors:
+                    if execution_state not in textp.execution_state: continue
+                    for i, key in enumerate(self.keys):
+                        if key in filter_keys:
+                            var[i] = textp.process(var[i], inp_type=key)
 
-            for i in range(len(var)):
-                var[i] = (var[i] if isinstance(var[i], list) else [var[i]])
+                for i in range(len(var)):
+                    var[i] = (var[i] if isinstance(var[i], list) else [var[i]])
 
-            for filter_keys, sentp in self.sent_processors:
-                for i, key in enumerate(self.keys):
-                    if key in filter_keys:
-                        for j in range(len(var[i])):
-                            var[i][j] = sentp.process(var[i][j], inp_type=key)
+                for filter_keys, sentp in self.sent_processors:
+                    if execution_state not in sentp.execution_state: continue
+                    for i, key in enumerate(self.keys):
+                        if key in filter_keys:
+                            for j in range(len(var[i])):
+                                var[i][j] = sentp.process(var[i][j], inp_type=key)
 
-            for i in range(len(var)):
-                var[i] = (var[i] if isinstance(var[i][0], list) else [[sent] for sent in var[i]])
+                for i in range(len(var)):
+                    var[i] = (var[i] if isinstance(var[i][0], list) else [[sent] for sent in var[i]])
 
-            for filter_keys, tokenp in self.token_processors:
-                for i, key in enumerate(self.keys):
-                    if key in filter_keys:
-                        for j in range(len(var[i])):
-                            for k in range(len(var[i][j])):
-                                var[i][j][k] = tokenp.process(var[i][j][k], inp_type=key)
+                for filter_keys, tokenp in self.token_processors:
+                    if execution_state not in tokenp.execution_state: continue
+                    for i, key in enumerate(self.keys):
+                        if key in filter_keys:
+                            for j in range(len(var[i])):
+                                for k in range(len(var[i][j])):
+                                    var[i][j][k] = tokenp.process(var[i][j][k], inp_type=key)
 
-            for filter_keys, postp in self.post_processors:
-                for i, key in enumerate(self.keys):
-                    if key in filter_keys:
-                        var[i] = postp.process(var[i], inp_type=key)
+                for filter_keys, postp in self.post_processors:
+                    if execution_state not in postp.execution_state: continue
+                    for i, key in enumerate(self.keys):
+                        if key in filter_keys:
+                            var[i] = postp.process(var[i], inp_type=key)
 
         return self.state
