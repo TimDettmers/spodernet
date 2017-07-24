@@ -17,7 +17,7 @@ from io import StringIO
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 from spodernet.preprocessing.pipeline import Pipeline, DatasetStreamer, StreamMethods
-from spodernet.preprocessing.processors import Tokenizer, CustomTokenizer, SaveStateToList, AddToVocab, ToLower, ConvertTokenToIdx, SaveLengthsToState, SentTokenizer
+from spodernet.preprocessing.processors import Tokenizer, CustomTokenizer, SaveStateToList, AddToVocab, ToLower, ConvertTokenToIdx, SentTokenizer
 from spodernet.preprocessing.processors import JsonLoaderProcessors, RemoveLineOnJsonValueCondition, DictKey2ListMapper
 from spodernet.preprocessing.processors import StreamToHDF5, DeepSeqMap, StreamToBatch, TargetIdx2MultiTarget
 from spodernet.preprocessing.processors import NERTokenizer, POSTokenizer, DependencyParser, TfidfFitter, TfidfTransformer
@@ -611,7 +611,6 @@ def test_save_lengths():
     # 1. setup pipeline
     p = Pipeline('test_pipeline')
     p.add_sent_processor(CustomTokenizer(tokenizer.tokenize))
-    p.add_post_processor(SaveLengthsToState())
     state = p.execute(s)
 
     lengths_inp = state['data']['lengths']['input']
@@ -654,7 +653,6 @@ def test_stream_to_hdf5():
     p = Pipeline(pipeline_folder)
     p.add_token_processor(AddToVocab())
     p.add_sent_processor(CustomTokenizer(tokenizer.tokenize))
-    p.add_post_processor(SaveLengthsToState())
     p.add_post_processor(ConvertTokenToIdx())
     p.add_post_processor(SaveStateToList('idx'))
     # 2 samples per file -> 50 files
@@ -778,7 +776,6 @@ def test_non_random_stream_batcher(samples_per_file, randomize, batch_size):
     p = Pipeline(pipeline_folder)
     p.add_token_processor(AddToVocab())
     p.add_sent_processor(CustomTokenizer(tokenizer.tokenize))
-    p.add_post_processor(SaveLengthsToState())
     p.add_post_processor(ConvertTokenToIdx())
     p.add_post_processor(SaveStateToList('idx'))
     # 2 samples per file -> 50 files
@@ -867,7 +864,6 @@ def test_abitrary_input_data():
     p = Pipeline('test_keys', keys=['question', 'support', 'answer', 'pos'])
     p.add_sent_processor(CustomTokenizer(tokenizer.tokenize))
     p.add_token_processor(AddToVocab(general_vocab_keys=['question', 'support']))
-    p.add_post_processor(SaveLengthsToState())
 
     with open(file_path, 'w') as f:
         for i in range(2):
@@ -920,7 +916,6 @@ def test_bin_streamer():
     # 1. Setup pipeline to save lengths and generate vocabulary
     p = Pipeline(pipeline_folder)
     p.add_sent_processor(CustomTokenizer(tokenizer.tokenize))
-    p.add_post_processor(SaveLengthsToState())
     p.execute(s)
     p.clear_processors()
 

@@ -7,6 +7,7 @@ import zipfile
 
 from spodernet.preprocessing.vocab import Vocab
 from spodernet.utils.util import Timer
+from spodernet.preprocessing.processors import SaveLengthsToState
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 from spodernet.utils.logger import Logger
@@ -77,10 +78,6 @@ class DatasetStreamer(object):
 
 class Pipeline(object):
     def __init__(self, name, delete_all_previous_data=False, keys=None):
-        self.text_processors = []
-        self.sent_processors = []
-        self.token_processors = []
-        self.post_processors = []
 
         self.keys = keys or ['input', 'support', 'target']
         home = os.environ['HOME']
@@ -107,6 +104,12 @@ class Pipeline(object):
         for key in self.keys:
             self.state['vocab'][key] = Vocab(path=join(self.root, 'vocab_'+key))
             self.state['tfidf'][key] = TfidfVectorizer(stop_words=[])
+
+        self.text_processors = []
+        self.sent_processors = []
+        self.token_processors = []
+        self.post_processors = [(self.keys, SaveLengthsToState())]
+        self.post_processors[-1][1].link_with_pipeline(self.state)
 
     def add_text_processor(self, text_processor, keys=None):
         keys = keys or self.keys
