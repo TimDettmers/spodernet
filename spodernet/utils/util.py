@@ -1,13 +1,16 @@
 from os.path import join
+from scipy.sparse import csr_matrix
 
 import h5py
 import os
 import time
+import os
+import numpy as np
 
 from spodernet.utils.logger import Logger
 log = Logger('util.py.txt')
 
-def write_to_hdf(path, data):
+def save_dense_hdf(path, data):
     '''Writes a numpy array to a hdf5 file under the given path.'''
     log.debug_once('Saving hdf5 file to: {0}', path)
     h5file = h5py.File(path, "w")
@@ -15,7 +18,7 @@ def write_to_hdf(path, data):
     h5file.close()
 
 
-def load_hdf_file(path, keyword='default'):
+def load_dense_hdf(path, keyword='default'):
     '''Reads and returns a numpy array for a hdf5 file'''
     log.debug_once('Reading hdf5 file from: {0}', path)
     h5file = h5py.File(path, 'r')
@@ -24,13 +27,49 @@ def load_hdf_file(path, keyword='default'):
     h5file.close()
     return data
 
+def save_sparse_hdf(path, data):
+    shape = data.shape
+    sparse = csr_matrix(data)
+    folder, filename = os.path.split(path)
+    save_dense_hdf(join(folder, 'data_' + filename), sparse.data)
+    save_dense_hdf(join(folder, 'indices_' + filename), sparse.indices)
+    save_dense_hdf(join(folder, 'indptr_' + filename), sparse.indptr)
+    save_dense_hdf(join(folder, 'shape_dense_' + filename), shape)
+    save_dense_hdf(join(folder, 'shape_sparse_' + filename), sparse.shape)
+
+def load_sparse_hdf(path, keyword='default'):
+    folder, filename = os.path.split(path)
+    data = load_dense_hdf(join(folder, 'data_' + filename))
+    indices = load_dense_hdf(join(folder, 'indices_' + filename))
+    indptr = load_dense_hdf(join(folder, 'indptr_' + filename))
+    shape = load_dense_hdf(join(folder, 'shape_dense_' + filename))
+    shape_sparse = load_dense_hdf(join(folder, 'shape_sparse_' + filename))
+    return csr_matrix((data, indices, indptr), shape=shape_sparse).toarray().reshape(shape)
+
+def load_data(path):
+    folder, filename = os.path.split(path)
+    if os.path.exists(join(folder, 'indptr_' + filename)):
+        return load_sparse_hdf(path)
+    else:
+        return load_dense_hdf(path)
+
+def save_data(path, data):
+    nonzero = np.count_nonzero(data)
+    zero = data.size - nonzero
+    percent = zero/float(data.size)
+    if percent > 0.5:
+        save_sparse_hdf(path, data)
+    else:
+        save_dense_hdf(path, data)
+
+
 def load_hdf5_paths(paths, limit=None):
     data = []
     for path in paths:
         if limit != None:
-            data.append(load_hdf_file(path)[:limit])
+            data.append(load_dense_hdf(path)[:limit])
         else:
-            data.append(load_hdf_file(path))
+            data.append(load_dense_hdf(path))
     return data
 
 def get_home_path():

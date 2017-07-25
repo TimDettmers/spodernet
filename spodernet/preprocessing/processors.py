@@ -10,7 +10,7 @@ import nltk
 
 nlp = spacy.load('en')
 
-from spodernet.utils.util import get_data_path, write_to_hdf, make_dirs_if_not_exists, load_hdf_file, Timer
+from spodernet.utils.util import get_data_path, save_data, make_dirs_if_not_exists, load_data, Timer
 from spodernet.interfaces import IAtBatchPreparedObservable
 from spodernet.utils.global_config import Config
 
@@ -557,7 +557,7 @@ class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
             #X = X[self.shuffle_idx]
         log.debug('Writing hdf5 file for input type {0} to disk. Using index {1} and path {2}', inp_type, idx, join(self.base_path, file_name))
         log.debug('Writing hdf5 data. One sample row: {0}, shape: {1}, type: {2}', X[0], X.shape, X.dtype)
-        write_to_hdf(join(self.base_path, file_name), X)
+        save_data(join(self.base_path, file_name), X)
         if idx not in self.paths: self.paths[idx] = []
         self.paths[idx].append(join(self.base_path, file_name))
 
@@ -572,7 +572,7 @@ class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
             X_len = np.array(self.state['data']['lengths'][inp_type][start:end], dtype=np.int32)
             file_name_len = inp_type + '_lengths_' + str(idx+1) + '.hdf5'
             #X_len = X_len[self.shuffle_idx]
-            write_to_hdf(join(self.base_path, file_name_len), X_len)
+            save_data(join(self.base_path, file_name_len), X_len)
             self.paths[idx].append(join(self.base_path, file_name_len))
         else:
             start = idx*self.samples_per_file
@@ -580,13 +580,13 @@ class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
             X_len = np.array(self.state['data']['lengths'][inp_type][start:end], dtype=np.int32)
             file_name_len = inp_type + '_lengths_' + str(idx+1) + '.hdf5'
             #X_len = X_len[self.shuffle_idx]
-            write_to_hdf(join(self.base_path, file_name_len), X_len)
+            save_data(join(self.base_path, file_name_len), X_len)
             self.paths[idx].append(join(self.base_path, file_name_len))
 
             file_name_index = 'index_' + str(idx+1) + '.hdf5'
             index = np.arange(self.idx - X.shape[0], self.idx, dtype=np.int32)
             #index = index[self.shuffle_idx]
-            write_to_hdf(join(self.base_path, file_name_index), index)
+            save_data(join(self.base_path, file_name_index), index)
             self.paths[idx].append(join(self.base_path, file_name_index))
 
         self.shard_id[inp_type] += 1

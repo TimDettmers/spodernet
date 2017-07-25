@@ -23,7 +23,7 @@ from spodernet.preprocessing.processors import StreamToHDF5, DeepSeqMap, StreamT
 from spodernet.preprocessing.processors import NERTokenizer, POSTokenizer, DependencyParser, TfidfFitter, TfidfTransformer
 from spodernet.preprocessing.vocab import Vocab
 from spodernet.preprocessing.batching import StreamBatcher, BatcherState
-from spodernet.utils.util import get_data_path, load_hdf_file
+from spodernet.utils.util import get_data_path, load_data
 from spodernet.utils.global_config import Config, Backends
 from spodernet.hooks import LossHook, AccuracyHook, ETAHook
 
@@ -709,7 +709,7 @@ def test_stream_to_hdf5():
         start = data_idx*2
         end = (data_idx + 1)*2
         data_idx += 1
-        index[start:end] = load_hdf_file(path)
+        index[start:end] = load_data(path)
 
     X = X[index]
     S = S[index]
@@ -722,8 +722,10 @@ def test_stream_to_hdf5():
     for data, paths in zip_iter:
         data_idx = 0
         for path in paths:
-            assert os.path.exists(path), 'This file should have been created by the HDF5Streamer: {0}'.format(path)
-            shard = load_hdf_file(path)
+            folder, filename = os.path.split(path)
+            assert (os.path.exists(path), 'This file should have been created by the HDF5Streamer: {0}'.format(path) or
+                    os.path.exists(join(folder, 'indptr_' + filename)))
+            shard = load_data(path)
             start = data_idx*2
             end = (data_idx + 1)*2
             np.testing.assert_array_equal(shard, data[start:end], 'HDF5 Stream data not equal for path {0}'.format(path))

@@ -1,8 +1,13 @@
 from __future__ import print_function
-import pytest
-
 from spodernet.utils.logger import Logger, GlobalLogger
+from spodernet.utils.util import save_data, load_data, get_data_path
+from os.path import join
 
+import pytest
+import numpy as np
+import uuid
+import os
+import shutil
 
 
 def test_global_logger():
@@ -28,3 +33,21 @@ def test_global_logger():
         assert message == expected[i]
 
     assert i  == len(expected) - 1
+
+test_data = [np.float32, np.float64, np.int32, np.int64]
+ids = ['float32', 'float64', 'int32', 'int64']
+@pytest.mark.parametrize("dtype", test_data, ids=ids)
+def test_save_load_data(dtype):
+    folder = join(get_data_path(), 'test_hdf')
+    if os.path.exists(folder):
+        shutil.rmtree(folder)
+    os.mkdir(folder)
+    for i in range(5):
+        filename = str(uuid.uuid4())
+        data1 = dtype(np.random.randn(100,100))
+        save_data(join(folder, filename), data1)
+        data2 = load_data(join(folder, filename))
+        np.testing.assert_array_equal(data1, data2, 'Arrays must be equal')
+    shutil.rmtree(folder)
+
+

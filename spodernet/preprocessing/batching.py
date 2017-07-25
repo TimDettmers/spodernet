@@ -8,7 +8,7 @@ import numpy as np
 import cPickle as pickle
 import Queue
 
-from spodernet.utils.util import get_data_path, load_hdf_file, Timer
+from spodernet.utils.util import get_data_path, load_data, Timer
 from spodernet.utils.global_config import Config, Backends
 from spodernet.hooks import ETAHook
 from spodernet.interfaces import IAtIterEndObservable, IAtEpochEndObservable, IAtEpochStartObservable, IAtBatchPreparedObservable
@@ -69,21 +69,21 @@ class DataLoaderSlave(Thread):
                 shuffle_idx = None
                 for path in paths:
                     if path not in self.current_data:
-                        data = load_hdf_file(path)
+                        data = load_data(path)
                         if shuffle_idx == None and self.randomize:
                             shuffle_idx = np.arange(data.shape[0])
                             self.rdm.shuffle(shuffle_idx)
 
                         if self.randomize:
                             data = data[shuffle_idx]
-                        self.current_data[path] = load_hdf_file(path)
+                        self.current_data[path] = load_data(path)
 
                 shuffle_idx = None
         else:
             shuffle_idx = None
             for path in current_paths:
                 if path not in self.current_data:
-                    data = load_hdf_file(path)
+                    data = load_data(path)
                     if shuffle_idx is None and self.randomize:
                         shuffle_idx = np.arange(data.shape[0])
                         self.rdm.shuffle(shuffle_idx)
