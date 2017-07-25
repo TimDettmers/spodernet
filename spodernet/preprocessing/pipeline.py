@@ -77,12 +77,13 @@ class DatasetStreamer(object):
             raise
 
 class Pipeline(object):
-    def __init__(self, name, delete_all_previous_data=False, keys=None):
-
+    def __init__(self, name, delete_all_previous_data=False, keys=None, skip_transformation=False, benchmark=False):
         self.keys = keys or ['input', 'support', 'target']
         home = os.environ['HOME']
         self.root = join(home, '.data', name)
         self.tfidf = TfidfVectorizer()
+        self.skip_transformation = skip_transformation
+        self.benchmark = benchmark
 
         if not os.path.exists(self.root):
             log.debug_once('Pipeline path {0} does not exist. Creating folder...', self.root)
@@ -172,18 +173,19 @@ class Pipeline(object):
         for filter_keys, textp in processors:
             for i, key in enumerate(self.keys):
                 if key in filter_keys:
-                    variables[i] = textp.process(variables[i], inp_type=key)
+                    variables[i] = textp.abstract_process(variables[i], inp_type=key)
         return variables
 
     def execute(self, data_streamer):
         '''Tokenizes the data, calcs the max length, and creates a vocab.'''
         for execution_state in ['fit', 'transform']:
-            for var in data_streamer.stream_files():
+            if execution_state == 'tranform' and self.skip_transformation: return self.state
+            for iter_count, var in enumerate(data_streamer.stream_files()):
                 for filter_keys, textp in self.text_processors:
                     if execution_state not in textp.execution_state: continue
                     for i, key in enumerate(self.keys):
                         if key in filter_keys:
-                            var[i] = textp.process(var[i], inp_type=key)
+                            var[i] = textp.abstract_process(var[i], key, self.benchmark)
 
                 for i in range(len(var)):
                     var[i] = (var[i] if isinstance(var[i], list) else [var[i]])
@@ -193,7 +195,7 @@ class Pipeline(object):
                     for i, key in enumerate(self.keys):
                         if key in filter_keys:
                             for j in range(len(var[i])):
-                                var[i][j] = sentp.process(var[i][j], inp_type=key)
+                                var[i][j] = sentp.abstract_process(var[i][j], key, self.benchmark)
 
                 for i in range(len(var)):
                     var[i] = (var[i] if isinstance(var[i][0], list) else [[sent] for sent in var[i]])
@@ -204,12 +206,12 @@ class Pipeline(object):
                         if key in filter_keys:
                             for j in range(len(var[i])):
                                 for k in range(len(var[i][j])):
-                                    var[i][j][k] = tokenp.process(var[i][j][k], inp_type=key)
+                                    var[i][j][k] = tokenp.abstract_process(var[i][j][k], key, self.benchmark)
 
                 for filter_keys, postp in self.post_processors:
                     if execution_state not in postp.execution_state: continue
                     for i, key in enumerate(self.keys):
                         if key in filter_keys:
-                            var[i] = postp.process(var[i], inp_type=key)
+                            var[i] = postp.abstract_process(var[i], key, self.benchmark)
 
         return self.state

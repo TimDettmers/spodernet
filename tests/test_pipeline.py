@@ -181,7 +181,7 @@ def test_sent_tokenizer():
             assert sent1[0] == sent2, 'Sentence differs!'
 
 
-def test_spacy_tokenizer():
+def test_nltk_tokenizer():
     tokenizer = nltk.tokenize.WordPunctTokenizer()
 
     s = DatasetStreamer()
@@ -199,18 +199,18 @@ def test_spacy_tokenizer():
 
     p.clear_processors()
     p.add_sent_processor(Tokenizer())
-    p.add_sent_processor(SaveStateToList('tokens_spacy'))
+    p.add_sent_processor(SaveStateToList('tokens_nltk'))
     state = p.execute(s)
 
-    inp_sents = state['data']['tokens_spacy']['input']
-    sup_sents = state['data']['tokens_spacy']['support']
-    sents_spacy = inp_sents + sup_sents
+    inp_sents = state['data']['tokens_nltk']['input']
+    sup_sents = state['data']['tokens_nltk']['support']
+    sents_nltk = inp_sents + sup_sents
 
     # 3. test equality
     misalignment_count = 0
-    assert len(sents) == len(sents_spacy), 'Sentence count differs!'
+    assert len(sents) == len(sents_nltk), 'Sentence count differs!'
     log.debug('count should be 200: {0}', len(sents))
-    for sent1, sent2 in zip(sents, sents_spacy):
+    for sent1, sent2 in zip(sents, sents_nltk):
         assert len(sent1)*0.8 < len(sent2) and len(sent1)*1.2 > len(sent2), 'Token count differs substantially!'
         for token1, token2 in zip(sent1, sent2):
             if token1 != token2:

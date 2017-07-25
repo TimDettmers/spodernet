@@ -6,10 +6,11 @@ import os
 import simplejson
 import copy
 import spacy
+import nltk
 
 nlp = spacy.load('en')
 
-from spodernet.utils.util import get_data_path, write_to_hdf, make_dirs_if_not_exists, load_hdf_file
+from spodernet.utils.util import get_data_path, write_to_hdf, make_dirs_if_not_exists, load_hdf_file, Timer
 from spodernet.interfaces import IAtBatchPreparedObservable
 from spodernet.utils.global_config import Config
 
@@ -134,10 +135,23 @@ class AbstractProcessor(object):
     def __init__(self):
         self.state = None
         self.execution_state = set(['fit', 'transform'])
-        pass
+        self.sample_counter = 0
+        self.timer = Timer(silent=True)
 
     def link_with_pipeline(self, state):
         self.state = state
+
+    def abstract_process(self, inputs, inp_type, benchmark):
+        benchmark=True
+        if benchmark:
+            self.sample_counter +=1
+            self.timer.tick()
+        result = self.process(inputs, inp_type)
+        if benchmark:
+            self.timer.tick()
+            if self.sample_counter == 10000:
+                log.info_once('Time taken for 10000 samples for input type {0} for processor {1}: '.format(inp_type, type(self).__name__) + '{0} seconds', round(self.timer.tock(), 2))
+        return result
 
     def process(self, inputs, inp_type):
         raise NotImplementedError('Classes that inherit from AbstractProcessor need to implement the process method')
@@ -267,9 +281,10 @@ class DeepSeqMap(AbstractLoopLevelListOfTokensProcessor):
 class Tokenizer(AbstractProcessor):
     def __init__(self):
         super(Tokenizer, self).__init__()
+        self.tokenizer = nltk.tokenize.WordPunctTokenizer()
 
     def process(self, sentence, inp_type):
-        return [token.text for token in nlp(unicode(sentence))]
+        return self.tokenizer.tokenize(sentence)
 
 class NERTokenizer(AbstractProcessor):
     def __init__(self):
@@ -277,7 +292,7 @@ class NERTokenizer(AbstractProcessor):
         self.execution_state = set(['transform'])
 
     def process(self, sentence, inp_type):
-        return [token.ent_type_ for token in nlp(unicode(sentence))]
+        return [token.ent_type_ for token in nlp(unicode(sentence), parse=False, entity=True, tag=True)]
 
 class DependencyParser(AbstractProcessor):
     def __init__(self):
@@ -285,7 +300,7 @@ class DependencyParser(AbstractProcessor):
         self.execution_state = set(['transform'])
 
     def process(self, sentence, inp_type):
-        return [token.dep_ for token in nlp(unicode(sentence))]
+        return [token.dep_ for token in nlp(unicode(sentence), parse=True, entity=True, tag=True)]
 
 class POSTokenizer(AbstractProcessor):
     def __init__(self):
@@ -293,14 +308,14 @@ class POSTokenizer(AbstractProcessor):
         self.execution_state = set(['transform'])
 
     def process(self, sentence, inp_type):
-        return [token.pos_ for token in nlp(unicode(sentence))]
+        return [token.pos_ for token in nlp(unicode(sentence), parse=False, entity=False, tag=True)]
 
 class SentTokenizer(AbstractProcessor):
     def __init__(self):
         super(SentTokenizer, self).__init__()
 
     def process(self, sentence, inp_type):
-        return [sent.text.replace('\n', '') for sent in nlp(unicode(sentence)).sents]
+        return [sent.text.replace('\n', '') for sent in nlp(unicode(sentence), tag=True, parse=True, entity=False).sents]
 
 class CustomTokenizer(AbstractProcessor):
     def __init__(self, tokenizer_method):
@@ -368,6 +383,7 @@ class ConvertTokenToIdx(AbstractLoopLevelTokenProcessor):
 class ApplyFunction(AbstractProcessor):
     def __init__(self, func):
         self.func = func
+        self.execution_state =['fit', 'transform']
 
     def process(self, data, inp_type):
         return self.func(data)
@@ -410,6 +426,7 @@ class SaveLengthsToState(AbstractLoopLevelListOfTokensProcessor):
 class SaveMaxLengthsToState(AbstractLoopLevelListOfTokensProcessor):
     def __init__(self):
         super(SaveMaxLengthsToState, self).__init__()
+        self.execution_state = set(['fit'])
 
     def link_with_pipeline(self, state):
         self.state = state
