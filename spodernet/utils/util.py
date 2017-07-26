@@ -49,13 +49,15 @@ def load_sparse_hdf(path, keyword='default'):
 def load_data(path):
     folder, filename = os.path.split(path)
     if os.path.exists(join(folder, 'indptr_' + filename)):
-        return load_sparse_hdf(path)
+        data = load_sparse_hdf(path)
+        return data
     else:
         return load_dense_hdf(path)
 
 def save_data(path, data):
     nonzero = np.count_nonzero(data)
     zero = data.size - nonzero
+    assert data.size > 0
     percent = zero/float(data.size)
     if percent > 0.5:
         save_sparse_hdf(path, data)
@@ -67,9 +69,9 @@ def load_hdf5_paths(paths, limit=None):
     data = []
     for path in paths:
         if limit != None:
-            data.append(load_dense_hdf(path)[:limit])
+            data.append(load_data(path)[:limit])
         else:
-            data.append(load_dense_hdf(path))
+            data.append(load_data(path))
     return data
 
 def get_home_path():

@@ -677,7 +677,7 @@ def test_stream_to_hdf5():
     X_len = np.zeros((n), dtype=np.int64)
     S = np.zeros((n, max_sup_len), dtype=np.int64)
     S_len = np.zeros((n), dtype=np.int64)
-    t = np.zeros((n), dtype=np.int64)
+    t = np.zeros((n, 1), dtype=np.int64)
     index = np.zeros((n), dtype=np.int64)
 
     for i in range(len(inp_indices)):
@@ -808,7 +808,7 @@ def test_non_random_stream_batcher(samples_per_file, randomize, batch_size):
     X_len = np.zeros((n), dtype=np.int64)
     S = np.zeros((n, max_sup_len), dtype=np.int64)
     S_len = np.zeros((n), dtype=np.int64)
-    T = np.zeros((n), dtype=np.int64)
+    T = np.zeros((n, 1), dtype=np.int64)
 
     for i in range(len(inp_indices)):
         sample_inp = inp_indices[i][0]
@@ -830,17 +830,17 @@ def test_non_random_stream_batcher(samples_per_file, randomize, batch_size):
 
     # 4. test data equality
     for epoch in range(epochs):
-        for x, x_len, s, s_len, t, t_len, idx in batcher:
+        for i, (x, x_len, s, s_len, t, t_len, idx) in enumerate(batcher):
             assert np.int32 == x_len.dtype, 'Input length type should be int32!'
             assert np.int32 == s_len.dtype, 'Support length type should be int32!'
             assert np.int32 == x.dtype, 'Input type should be int32!'
             assert np.int32 == s.dtype, 'Input type should be int32!'
             assert np.int32 == t.dtype, 'Target type should be int32!'
             assert np.int32 == idx.dtype, 'Index type should be int32!'
-            np.testing.assert_array_equal(X[idx], x, 'Input data not equal!')
-            np.testing.assert_array_equal(S[idx], s, 'Support data not equal!')
             np.testing.assert_array_equal(X_len[idx], x_len, 'Input length data not equal!')
             np.testing.assert_array_equal(S_len[idx], s_len, 'Support length data not equal!')
+            np.testing.assert_array_equal(X[idx], x, 'Input data not equal!')
+            np.testing.assert_array_equal(S[idx], s, 'Support data not equal!')
             np.testing.assert_array_equal(T[idx], t, 'Target data not equal!')
 
     # 5. clean up

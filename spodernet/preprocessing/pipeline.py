@@ -138,11 +138,15 @@ class Pipeline(object):
 
 
     def clear_processors(self):
-        self.post_processors = []
+        self.post_processors = [(self.keys, SaveLengthsToState())]
+        self.post_processors[-1][1].link_with_pipeline(self.state)
         self.sent_processors = []
         self.token_processors = []
         self.text_processors = []
         log.debug('Cleared processors of pipeline {0}', self.state['name'])
+
+    def clear_lengths(self):
+        self.state['data'].pop('lengths', None)
 
     def save_vocabs(self):
         self.state['vocab']['general'].save_to_disk()

@@ -1,4 +1,8 @@
 from os.path import join
+from spodernet.utils.util import Timer
+from spodernet.utils.util import get_data_path, save_data, make_dirs_if_not_exists, load_data, Timer
+from spodernet.interfaces import IAtBatchPreparedObservable
+from spodernet.utils.global_config import Config
 
 import numpy as np
 import cPickle as pickle
@@ -8,14 +12,11 @@ import copy
 import spacy
 import nltk
 
-nlp = spacy.load('en')
-
-from spodernet.utils.util import get_data_path, save_data, make_dirs_if_not_exists, load_data, Timer
-from spodernet.interfaces import IAtBatchPreparedObservable
-from spodernet.utils.global_config import Config
-
 from spodernet.utils.logger import Logger
 log = Logger('processors.py.txt')
+
+nlp = spacy.load('en')
+timer = Timer()
 
 class KeyToKeyMapper(IAtBatchPreparedObservable):
     def __init__(self, key2key):
@@ -422,6 +423,20 @@ class SaveLengthsToState(AbstractLoopLevelListOfTokensProcessor):
         log.debug_once('Pipeline {1}: A list of tokens: {0}', tokens, self.state['name'])
         return tokens
 
+class Idx2MultiTargetConverter(AbstractLoopLevelListOfTokensProcessor):
+    def __init__(self, num_labels, stop_index=0):
+        super(Idx2MultiTargetConverter, self).__init__()
+        self.num_labels = num_labels
+        self.stop_index = stop_index
+        self.execution_state = set(['transform'])
+
+    def process_list_of_tokens(self, tokens, inp_type):
+        out = [0]*self.num_labels
+        for col in tokens:
+            if col == self.stop_index: break
+            out[col] = 1
+
+        return out
 
 class SaveMaxLengthsToState(AbstractLoopLevelListOfTokensProcessor):
     def __init__(self):
@@ -445,7 +460,6 @@ class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
         self.max_length = None
         self.samples_per_file = samples_per_file
         self.name = name
-        self.idx = 0
         self.keys = copy.deepcopy(keys)
         if 'index' not in self.keys:
             self.keys.append('index')
@@ -453,17 +467,23 @@ class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
         self.max_lengths = {}
         self.data = {}
         self.datatypes = {}
+        self.lengths = {}
+        self.current_sample = {}
+        self.idx = {}
         for key in self.keys:
             self.shard_id[key] = 0
             self.max_lengths[key] = 0
             self.data[key] = []
             self.datatypes[key] = None
+            self.current_sample[key] = 0
+            self.idx[key] = 0
 
         self.num_samples = None
         self.config = {'paths' : [], 'sample_count' : []}
         self.checked_for_lengths = False
         self.paths = {}
         self.shuffle_idx = None
+        self.current_X = {}
 
     def link_with_pipeline(self, state):
         self.state = state
@@ -501,30 +521,29 @@ class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
             log.debug('Calculated max length for input type {0} to be {1}', inp_type, max_length)
             self.max_lengths[inp_type] = max_length
             log.statistical('max length of the dataset: {0}', 0.0001, max_length)
-        x = np.zeros((self.max_lengths[inp_type]), dtype=self.datatypes[inp_type])
-        x[:len(tokens)] = tokens
-        if len(tokens) == 1 and self.max_lengths[inp_type] == 1:
-            self.data[inp_type].append(x[0])
-            log.debug_once('Adding one dimensional data for type ' + inp_type + ': {0}', x[0])
-        else:
-            self.data[inp_type].append(x.tolist())
-            log.debug_once('Adding list data for type ' + inp_type + ': {0}', x.tolist())
+        if inp_type not in self.current_X:
+            self.current_X[inp_type] = np.zeros((self.samples_per_file, self.max_lengths[inp_type]), dtype=self.datatypes[inp_type])
+            self.current_sample[inp_type] = 0
+        self.current_X[inp_type][self.current_sample[inp_type], :len(tokens)] = tokens
+        self.current_sample[inp_type] += 1
+
         if inp_type == self.keys[-2]:
-            self.data['index'].append(self.idx)
-            self.idx += 1
+            self.data['index'].append(self.idx[inp_type])
+        self.idx[inp_type] += 1
 
-        if (  len(self.data[inp_type]) == self.samples_per_file
-           or len(self.data[inp_type]) == self.num_samples):
-            self.save_to_hdf5(inp_type)
+        if (self.current_sample[inp_type] % self.samples_per_file == 0
+           or self.idx[inp_type] == self.num_samples):
+            if self.current_sample[inp_type] > 0:
+                self.save_to_hdf5(inp_type)
 
 
-        if self.idx % 10000 == 0:
-            if self.idx % 50000 == 0:
-                log.info('Processed {0} samples so far...', self.idx)
+        if self.idx[inp_type] % 10000 == 0:
+            if self.idx[inp_type] % 50000 == 0:
+                log.info('Processed {0} samples so far...', self.idx[inp_type])
             else:
-                log.debug('Processed {0} samples so far...', self.idx)
+                log.debug('Processed {0} samples so far...', self.idx[inp_type])
 
-        if self.idx == self.num_samples:
+        if self.idx[inp_type] == self.num_samples:
             counts = np.array(self.config['sample_count'])
             log.debug('Counts for each shard: {0}'.format(counts))
             fractions = counts / np.float32(np.sum(counts))
@@ -541,18 +560,14 @@ class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
 
     def save_to_hdf5(self, inp_type):
         idx = self.shard_id[inp_type]
-        X = np.array(self.data[inp_type], dtype=self.datatypes[inp_type])
+        if self.current_sample[inp_type] >= self.samples_per_file -1:
+            X = self.current_X[inp_type]
+        else:
+            X = self.current_X[inp_type][:self.current_sample[inp_type]]
         file_name = inp_type + '_' + str(idx+1) + '.hdf5'
-        if isinstance(X[0], list):
-            new_X = []
-            l = len(X[0])
-            for i, list_item in enumerate(X):
-                assert l == len(list_item)
-            X = np.array(new_X, dtype=self.datatypes[inp_type])
-            log.debug("{0}", X)
 
         if inp_type == 'input':
-            self.shuffle_idx = np.arange(X.shape[0])
+            #self.shuffle_idx = np.arange(X.shape[0])
             log.debug_once('First row of input data with shape {1} written to hdf5: {0}', X[0], X.shape)
             #X = X[self.shuffle_idx]
         log.debug('Writing hdf5 file for input type {0} to disk. Using index {1} and path {2}', inp_type, idx, join(self.base_path, file_name))
@@ -560,7 +575,6 @@ class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
         save_data(join(self.base_path, file_name), X)
         if idx not in self.paths: self.paths[idx] = []
         self.paths[idx].append(join(self.base_path, file_name))
-
 
         if inp_type == self.keys[0]:
             log.statistical('Count of shard {0}; should be {1} most of the time'.format(X.shape[0], self.samples_per_file), 0.1)
@@ -584,13 +598,14 @@ class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
             self.paths[idx].append(join(self.base_path, file_name_len))
 
             file_name_index = 'index_' + str(idx+1) + '.hdf5'
-            index = np.arange(self.idx - X.shape[0], self.idx, dtype=np.int32)
+            index = np.arange(self.idx[inp_type] - X.shape[0], self.idx[inp_type], dtype=np.int32)
             #index = index[self.shuffle_idx]
             save_data(join(self.base_path, file_name_index), index)
             self.paths[idx].append(join(self.base_path, file_name_index))
 
         self.shard_id[inp_type] += 1
-        del self.data[inp_type][:]
+        self.current_X.pop(inp_type, None)
+        self.current_sample[inp_type] = 0
 
 
 
