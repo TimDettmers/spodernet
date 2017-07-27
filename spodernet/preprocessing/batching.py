@@ -179,7 +179,7 @@ class DataLoaderSlave(Thread):
 
 
 class StreamBatcher(object):
-    def __init__(self, pipeline_name, name, batch_size, loader_threads=4, randomize=False, seed=None, keys=['input', 'support', 'target']):
+    def __init__(self, pipeline_name, name, batch_size, loader_threads=4, randomize=False, seed=None, keys=['input', 'support', 'target'], is_volatile=False):
         config_path = join(get_data_path(), pipeline_name, name, 'hdf5_config.pkl')
         config = pickle.load(open(config_path))
         self.paths = config['paths']
@@ -206,7 +206,7 @@ class StreamBatcher(object):
         if Config.backend == Backends.TORCH:
             from spodernet.backends.torchbackend import TorchConverter, TorchCUDAConverter
             self.subscribe_to_batch_prepared_event(DictConverter(keys))
-            self.subscribe_to_batch_prepared_event(TorchConverter())
+            self.subscribe_to_batch_prepared_event(TorchConverter(is_volatile))
             if Config.cuda:
                 import torch
                 self.subscribe_to_batch_prepared_event(TorchCUDAConverter(torch.cuda.current_device()))

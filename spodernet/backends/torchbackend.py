@@ -10,12 +10,15 @@ from spodernet.utils.util import Timer
 from spodernet.utils.global_config import Config
 
 class TorchConverter(IAtBatchPreparedObservable):
+    def __init__(self, is_volatile):
+        self.is_volatile = is_volatile
+
     def at_batch_prepared(self, str2var):
         for key in str2var.keys():
             if 'length' in key: continue
             if str2var[key].dtype == np.int32:
                 str2var[key] = np.int64(str2var[key])
-            str2var[key] = Variable(torch.from_numpy(str2var[key]))
+            str2var[key] = Variable(torch.from_numpy(str2var[key]), volatile=self.is_volatile)
         return str2var
 
 class TorchCUDAConverter(IAtBatchPreparedObservable):

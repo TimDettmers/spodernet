@@ -4,6 +4,7 @@ import os
 import shutil
 import simplejson as json
 import zipfile
+import numpy as np
 
 from spodernet.preprocessing.vocab import Vocab
 from spodernet.utils.util import Timer
@@ -219,3 +220,82 @@ class Pipeline(object):
                             var[i] = postp.abstract_process(var[i], key, self.benchmark)
 
         return self.state
+
+    def stream(self, data_streamer, batch_size, skip_probability=0.0):
+        str2var = {}
+        key2max_len_and_type = {}
+        index = 0
+        for execution_state in ['fit', 'transform']:
+            for iter_count, var in enumerate(data_streamer.stream_files()):
+                for filter_keys, textp in self.text_processors:
+                    if execution_state not in textp.execution_state: continue
+                    for i, key in enumerate(self.keys):
+                        if key in filter_keys:
+                            var[i] = textp.abstract_process(var[i], key, self.benchmark)
+
+                for i in range(len(var)):
+                    var[i] = (var[i] if isinstance(var[i], list) else [var[i]])
+
+                for filter_keys, sentp in self.sent_processors:
+                    if execution_state not in sentp.execution_state: continue
+                    for i, key in enumerate(self.keys):
+                        if key in filter_keys:
+                            for j in range(len(var[i])):
+                                var[i][j] = sentp.abstract_process(var[i][j], key, self.benchmark)
+
+                for i in range(len(var)):
+                    var[i] = (var[i] if isinstance(var[i][0], list) else [[sent] for sent in var[i]])
+
+                for filter_keys, tokenp in self.token_processors:
+                    if execution_state not in tokenp.execution_state: continue
+                    for i, key in enumerate(self.keys):
+                        if key in filter_keys:
+                            for j in range(len(var[i])):
+                                for k in range(len(var[i][j])):
+                                    var[i][j][k] = tokenp.abstract_process(var[i][j][k], key, self.benchmark)
+
+                for filter_keys, postp in self.post_processors:
+                    if execution_state not in postp.execution_state: continue
+                    for i, key in enumerate(self.keys):
+                        if key in filter_keys:
+                            var[i] = postp.abstract_process(var[i], key, self.benchmark)
+                if execution_state == 'transform':
+
+                    for i, key in enumerate(self.keys):
+                        if key not in str2var:
+                            str2var[key] = []
+                            str2var[key+'_length'] = []
+                        str2var[key].append(var[i])
+                        str2var[key+'_length'].append(self.state['data']['lengths'][key][index])
+                    if 'index' not in str2var: str2var['index'] = []
+                    str2var['index'].append(index)
+
+                    if len(str2var[key]) == batch_size:
+                        for key in self.keys:
+                            batches = str2var[key]
+
+                            if key not in key2max_len_and_type:
+                                if isinstance(batches[0][0][0], float):
+                                    dtype = np.float32
+                                elif isinstance(batches[0][0][0], int):
+                                    dtype = np.int32
+                                else:
+                                    raise Exception('Unknown data type: {0} for item {1}'.format(type(batches[0][0][0]), batches[0][0][0]))
+
+                                max_len = np.max(self.state['data']['lengths'][key])
+                                key2max_len_and_type[key] = (max_len, dtype)
+
+                            empty_batch = np.zeros((batch_size, key2max_len_and_type[key][0]), dtype=key2max_len_and_type[key][1])
+                            var = str2var[key]
+                            lengths = str2var[key+'_length']
+                            for row in range(len(var)):
+                                data = var[row]
+                                while isinstance(data, list):
+                                    if not isinstance(data[0], list): break
+                                    data = data[0]
+                                empty_batch[row, :lengths[row]] = data
+                            str2var[key] = empty_batch
+                        str2var['index'] = np.array(str2var['index'], dtype=np.int32)
+                        yield str2var
+                        str2var = {}
+                    index += 1

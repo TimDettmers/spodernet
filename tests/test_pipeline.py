@@ -723,8 +723,7 @@ def test_stream_to_hdf5():
         data_idx = 0
         for path in paths:
             folder, filename = os.path.split(path)
-            assert (os.path.exists(path), 'This file should have been created by the HDF5Streamer: {0}'.format(path) or
-                    os.path.exists(join(folder, 'indptr_' + filename)))
+            assert (os.path.exists(path) or os.path.exists(join(folder, 'indptr_' + filename))), 'This file should have been created by the HDF5Streamer: {0}'.format(path)
             shard = load_data(path)
             start = data_idx*2
             end = (data_idx + 1)*2
@@ -1331,3 +1330,76 @@ def test_tfidf():
         assert len(doc1) == len(doc2), 'Documents have differernt length!'
         for num1, num2 in zip(doc1, doc2):
             assert np.round(num1, 7) == np.round(num2, 7), 'Tfidf values are different!'
+
+
+
+
+test_data = [17, 128]
+ids = ['batch_size=17', 'batch_size=128']
+@pytest.mark.parametrize("batch_size", test_data, ids=ids)
+def test_batch_streaming_pipeline(batch_size):
+    tokenizer = nltk.tokenize.WordPunctTokenizer()
+    pipeline_folder = 'test_pipeline'
+
+    s = DatasetStreamer()
+    s.set_path(get_test_data_path_dict()['snli1k'])
+    s.add_stream_processor(JsonLoaderProcessors())
+    # 1. Setup pipeline to save lengths and generate vocabulary
+    p = Pipeline(pipeline_folder)
+    p.add_token_processor(AddToVocab())
+    p.add_sent_processor(CustomTokenizer(tokenizer.tokenize))
+    p.add_post_processor(ConvertTokenToIdx())
+    p.add_post_processor(SaveStateToList('idx'))
+    state = p.execute(s)
+
+    # 2. Load data from the SaveStateToList hook
+    inp_indices = state['data']['idx']['input']
+    sup_indices = state['data']['idx']['support']
+    t_indices = state['data']['idx']['target']
+    max_inp_len = np.max(state['data']['lengths']['input'])
+    max_sup_len = np.max(state['data']['lengths']['support'])
+    # For SNLI the targets consist of single words'
+
+    # 3. parse data to numpy
+    n = len(inp_indices)
+    X = np.zeros((n, max_inp_len), dtype=np.int64)
+    X_len = np.zeros((n), dtype=np.int64)
+    S = np.zeros((n, max_sup_len), dtype=np.int64)
+    S_len = np.zeros((n), dtype=np.int64)
+    T = np.zeros((n, 1), dtype=np.int64)
+
+    for i in range(len(inp_indices)):
+        sample_inp = inp_indices[i][0]
+        sample_sup = sup_indices[i][0]
+        sample_t = t_indices[i][0]
+        l = len(sample_inp)
+        X_len[i] = l
+        X[i, :l] = sample_inp
+
+        l = len(sample_sup)
+        S_len[i] = l
+        S[i, :l] = sample_sup
+
+        T[i] = sample_t[0]
+
+    epochs = 2
+
+    # 4. test data equality
+    str2var_expected = {}
+    str2var_expected['input'] = X
+    str2var_expected['support'] = S
+    str2var_expected['target'] = T
+    str2var_expected['input_length'] = X_len
+    str2var_expected['support_length'] = S_len
+    for epoch in range(epochs):
+        for i, str2var in enumerate(p.stream(s, batch_size)):
+            assert np.int32 == str2var['input'].dtype, 'Input length type should be int32!'
+            assert np.int32 == str2var['support'].dtype, 'Support length type should be int32!'
+            assert np.int32 == str2var['target'].dtype, 'Target type should be int32!'
+            assert np.int32 == str2var['index'].dtype, 'Index type should be int32!'
+            idx = str2var['index']
+            np.testing.assert_array_equal(X_len[idx], str2var['input_length'], 'Input length data not equal!')
+            np.testing.assert_array_equal(S_len[idx], str2var['support_length'], 'Support length data not equal!')
+            np.testing.assert_array_equal(X[idx], str2var['input'], 'Input data not equal!')
+            np.testing.assert_array_equal(S[idx], str2var['support'], 'Support data not equal!')
+            np.testing.assert_array_equal(T[idx], str2var['target'], 'Target data not equal!')
