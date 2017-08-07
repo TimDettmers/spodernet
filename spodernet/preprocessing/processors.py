@@ -383,6 +383,7 @@ class ConvertTokenToIdx(AbstractLoopLevelTokenProcessor):
 
 class ApplyFunction(AbstractProcessor):
     def __init__(self, func):
+        super(ApplyFunction, self).__init__()
         self.func = func
         self.execution_state =['fit', 'transform']
 
