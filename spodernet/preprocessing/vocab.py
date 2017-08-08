@@ -1,10 +1,10 @@
 from collections import Counter
 
-import cPickle as pickle
 import numpy as np
 import os
 import time
 import datetime
+import json
 
 '''This models the vocabulary and token embeddings'''
 
@@ -42,12 +42,12 @@ class Vocab(object):
         self.idx2token = idx2token
         self.path = path
         if len(idx2token.keys()) > 0:
-            self.next_idx = int(np.max(idx2token.keys()) + 1)
+            self.next_idx = int(np.max(list(idx2token.keys())) + 1)
         else:
             self.next_idx = int(2)
 
         if len(self.idx2label.keys()) > 0:
-            self.next_label_2dx = int(np.max(self.idx2label.keys()) + 1)
+            self.next_label_2dx = int(int(np.max(self.idx2label.keys())) + 1)
         else:
             self.next_label_idx = int(0)
 
@@ -91,9 +91,8 @@ class Vocab(object):
 
     def save_to_disk(self, name=''):
         log.info('Saving vocab to: {0}'.format(self.path))
-        pickle.dump([self.token2idx, self.idx2token, self.label2idx,
-            self.idx2label], open(self.path + name, 'wb'),
-                    pickle.HIGHEST_PROTOCOL)
+        json.dump([self.token2idx, self.idx2token, self.label2idx,
+            self.idx2label], open(self.path + name, 'w'))
 
     def load_from_disk(self, name=''):
         if not os.path.exists(self.path + name):
@@ -105,5 +104,5 @@ class Vocab(object):
             log.info('Vocabulary outdated: {0}'.format(self.path + name))
             return False
         log.info('Loading vocab from: {0}'.format(self.path + name))
-        self.token2idx, self.idx2token, self.label2idx, self.idx2label = pickle.load(open(self.path))
+        self.token2idx, self.idx2token, self.label2idx, self.idx2label = json.load(open(self.path))
         return True

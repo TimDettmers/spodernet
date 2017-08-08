@@ -1,16 +1,18 @@
+from __future__ import unicode_literals
 from os.path import join
 from spodernet.utils.util import Timer
 from spodernet.utils.util import get_data_path, save_data, make_dirs_if_not_exists, load_data, Timer
 from spodernet.interfaces import IAtBatchPreparedObservable
 from spodernet.utils.global_config import Config
+from past.builtins import basestring, long
 
 import numpy as np
-import cPickle as pickle
 import os
-import simplejson
 import copy
 import spacy
 import nltk
+import json
+import pickle
 
 from spodernet.utils.logger import Logger
 log = Logger('processors.py.txt')
@@ -108,7 +110,7 @@ class ListIndexRemapper(object):
 
 class JsonLoaderProcessors(object):
     def process(self, line):
-        return simplejson.loads(line)
+        return json.loads(line)
 
 class RemoveLineOnJsonValueCondition(object):
     def __init__(self, key, func_condition):
@@ -293,7 +295,7 @@ class NERTokenizer(AbstractProcessor):
         self.execution_state = set(['transform'])
 
     def process(self, sentence, inp_type):
-        return [token.ent_type_ for token in nlp(unicode(sentence), parse=False, entity=True, tag=True)]
+        return [token.ent_type_ for token in nlp(sentence, parse=False, entity=True, tag=True)]
 
 class DependencyParser(AbstractProcessor):
     def __init__(self):
@@ -301,7 +303,7 @@ class DependencyParser(AbstractProcessor):
         self.execution_state = set(['transform'])
 
     def process(self, sentence, inp_type):
-        return [token.dep_ for token in nlp(unicode(sentence), parse=True, entity=True, tag=True)]
+        return [token.dep_ for token in nlp(sentence, parse=True, entity=True, tag=True)]
 
 class POSTokenizer(AbstractProcessor):
     def __init__(self):
@@ -309,14 +311,14 @@ class POSTokenizer(AbstractProcessor):
         self.execution_state = set(['transform'])
 
     def process(self, sentence, inp_type):
-        return [token.pos_ for token in nlp(unicode(sentence), parse=False, entity=False, tag=True)]
+        return [token.pos_ for token in nlp(sentence, parse=False, entity=False, tag=True)]
 
 class SentTokenizer(AbstractProcessor):
     def __init__(self):
         super(SentTokenizer, self).__init__()
 
     def process(self, sentence, inp_type):
-        return [sent.text.replace('\n', '') for sent in nlp(unicode(sentence), tag=True, parse=True, entity=False).sents]
+        return [sent.text.replace('\n', '') for sent in nlp(sentence, tag=True, parse=True, entity=False).sents]
 
 class CustomTokenizer(AbstractProcessor):
     def __init__(self, tokenizer_method):
@@ -555,7 +557,8 @@ class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
             for i in range(fractions.size):
                 self.config['paths'].append(self.paths[i])
 
-            pickle.dump(self.config, open(join(self.base_path, 'hdf5_config.pkl'), 'w'))
+            print(self.config)
+            pickle.dump(self.config, open(join(self.base_path, 'hdf5_config.pkl'), 'wb'), pickle.HIGHEST_PROTOCOL)
 
         return tokens
 

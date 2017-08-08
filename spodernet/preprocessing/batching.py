@@ -1,12 +1,15 @@
+from future import standard_library
+standard_library.install_aliases()
+
 from os.path import join
-from threading import Thread, Event
+import threading
 from collections import namedtuple
 
 import time
 import datetime
 import numpy as np
-import cPickle as pickle
-import Queue
+import queue
+import pickle
 
 from spodernet.utils.util import get_data_path, load_data, Timer
 from spodernet.utils.global_config import Config, Backends
@@ -37,7 +40,7 @@ class BatcherState(object):
         self.multi_labels = None
 
 
-class DataLoaderSlave(Thread):
+class DataLoaderSlave(threading.Thread):
     def __init__(self, stream_batcher, batchidx2paths, batchidx2start_end, randomize=False, paths=None, shard2batchidx=None, seed=None, shard_fractions=None):
         super(DataLoaderSlave, self).__init__()
         if randomize:
@@ -47,12 +50,12 @@ class DataLoaderSlave(Thread):
         self.batchidx2start_end = batchidx2start_end
         self.current_data = {}
         self.randomize = randomize
-        self.num_batches = len(batchidx2paths.keys())
+        self.num_batches = len(list(batchidx2paths.keys()))
         self.rdm = np.random.RandomState(234+seed)
         self.shard_fractions = shard_fractions
         self.shard2batchidx = shard2batchidx
         self.paths = paths
-        self._stop = Event()
+        self._stop = threading.Event()
         self.daemon = True
         self.t = Timer()
         self.batches_processes = 0
@@ -119,7 +122,7 @@ class DataLoaderSlave(Thread):
             current_paths = current_paths[0] + current_paths[1]
 
 
-        for old_path in self.current_data.keys():
+        for old_path in list(self.current_data.keys()):
             if old_path not in current_paths:
                 self.current_data.pop(old_path, None)
 
@@ -142,7 +145,7 @@ class DataLoaderSlave(Thread):
                 continue
 
             if self.randomize:
-                shard_idx = self.rdm.choice(len(self.shard2batchidx.keys()), 1, p=self.shard_fractions)[0]
+                shard_idx = self.rdm.choice(len(list(self.shard2batchidx.keys())), 1, p=self.shard_fractions)[0]
                 current_paths = self.paths[shard_idx]
 
                 self.load_files_if_needed(current_paths)
@@ -154,7 +157,7 @@ class DataLoaderSlave(Thread):
                 batch_parts = self.create_batch_parts(current_paths, start, end)
             else:
                 if batch_idx not in self.batchidx2paths:
-                    log.error('{0}, {1}', batch_idx, self.batchidx2paths.keys())
+                    log.error('{0}, {1}', batch_idx, list(self.batchidx2paths.keys()))
                 current_paths = self.batchidx2paths[batch_idx]
                 start, end = self.batchidx2start_end[batch_idx]
 
@@ -181,7 +184,7 @@ class DataLoaderSlave(Thread):
 class StreamBatcher(object):
     def __init__(self, pipeline_name, name, batch_size, loader_threads=4, randomize=False, seed=None, keys=['input', 'support', 'target'], is_volatile=False):
         config_path = join(get_data_path(), pipeline_name, name, 'hdf5_config.pkl')
-        config = pickle.load(open(config_path))
+        config = pickle.load(open(config_path, 'rb'))
         self.paths = config['paths']
         self.fractions = config['fractions']
         self.num_batches = int(np.sum(config['counts']) / batch_size)
@@ -191,8 +194,8 @@ class StreamBatcher(object):
         self.prefetch_batch_idx = 0
         self.loaders = []
         self.prepared_batches = {}
-        self.prepared_batchidx = Queue.Queue()
-        self.work = Queue.Queue()
+        self.prepared_batchidx = queue.Queue()
+        self.work = queue.Queue()
         self.cached_batches = {}
         self.end_iter_observers = []
         self.end_epoch_observers = []
@@ -324,7 +327,8 @@ class StreamBatcher(object):
     def __iter__(self):
         return self
 
-    def next(self):
+
+    def __next__(self):
         if self.batch_idx == 0:
             while self.prefetch_batch_idx < self.loader_threads:
                 self.work.put(self.prefetch_batch_idx)
@@ -344,3 +348,5 @@ class StreamBatcher(object):
             self.batch_idx = 0
             self.publish_end_of_epoch_event()
             raise StopIteration()
+
+    next = __next__

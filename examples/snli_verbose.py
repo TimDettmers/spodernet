@@ -117,7 +117,7 @@ def snli2json():
             print('Writing {0}...'.format(new_name))
             archive = zipfile.ZipFile(join(data_dir, 'snli_1.0.zip'), 'r')
             snli_file = archive.open(join('snli_1.0', name), 'r')
-            with open(join(snli_dir, new_name), 'wb') as datafile:
+            with open(join(snli_dir, new_name), 'w') as datafile:
                 for line in snli_file:
                     data = json.loads((line))
                     if data['gold_label'] == '-':

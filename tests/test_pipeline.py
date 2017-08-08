@@ -1,3 +1,4 @@
+from __future__ import unicode_literals
 from io import StringIO
 from os.path import join
 
@@ -8,10 +9,10 @@ import pytest
 import simplejson as json
 import numpy as np
 import shutil
-import cPickle as pickle
 import itertools
 import scipy.stats
 import spacy
+import pickle
 
 from io import StringIO
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -44,7 +45,7 @@ def get_test_data_path_dict():
     return paths
 
 def test_dict2listmapper():
-    with open(join(get_data_path(), 'test.txt'), 'wb') as f:
+    with open(join(get_data_path(), 'test.txt'), 'w') as f:
         for i in range(10):
             test_dict = {}
             test_dict['key1'] = str(i+5)
@@ -71,7 +72,7 @@ def test_dict2listmapper():
     shutil.rmtree(join(get_data_path(), 'abc'))
 
 def test_remove_on_json_condition():
-    with open(join(get_data_path(), 'test.txt'), 'wb') as f:
+    with open(join(get_data_path(), 'test.txt'), 'w') as f:
         for i in range(10):
             test_dict = {}
             test_dict['key1'] = str(i+5)
@@ -303,7 +304,7 @@ def test_separate_vocabs():
 
     # 1. write test data
     file_path = join(get_data_path(), 'test_pipeline', 'test_data.json')
-    with open(file_path, 'wb') as f:
+    with open(file_path, 'w') as f:
         f.write(json.dumps(['0', 'a','-']) + '\n')
         f.write(json.dumps(['1', 'b','&']) + '\n')
         f.write(json.dumps(['2', 'c','#']) + '\n')
@@ -575,7 +576,7 @@ def test_convert_to_idx_with_separate_vocabs():
 
     # 1. write test data
     file_path = join(get_data_path(), 'test_pipeline', 'test_data.json')
-    with open(file_path, 'wb') as f:
+    with open(file_path, 'w') as f:
         f.write(json.dumps(['0', 'a','-']) + '\n')
         f.write(json.dumps(['1', 'b','&']) + '\n')
         f.write(json.dumps(['2', 'c','#']) + '\n')
@@ -734,7 +735,7 @@ def test_stream_to_hdf5():
     config_path = join(base_path, 'hdf5_config.pkl')
     config_reference = streamer.config
     assert os.path.exists(config_path), 'No HDF5 config exists under the path: {0}'.format(config_path)
-    config_dict = pickle.load(open(config_path))
+    config_dict = pickle.load(open(config_path, 'rb'))
     assert 'paths' in config_dict, 'paths key not found in config dict!'
     assert 'fractions' in config_dict, 'fractions key not found in config dict!'
     assert 'counts' in config_dict, 'counts key not found in config dict!'
@@ -995,6 +996,7 @@ ids = ['name={0}, print_every={1}'.format(name, print_every) for name, print_eve
 @pytest.mark.parametrize("hook_name, print_every", test_data, ids=ids)
 def test_hook(hook_name, print_every):
     def calc_confidence_interval(expected_loss):
+        assert len(expected_loss) > 0
         mean = np.mean(expected_loss)
         std = np.std(expected_loss)
         z = scipy.stats.norm.ppf(0.99)
@@ -1010,11 +1012,12 @@ def test_hook(hook_name, print_every):
         return loss, state
 
     def generate_accuracy():
-        target = np.random.randint(0,3,print_every)
-        argmax = np.random.randint(0,3,print_every)
+        target = np.random.randint(0,3, print_every)
+        argmax = np.random.randint(0,3, print_every)
         state = BatcherState()
         state.targets = target
         state.argmax = argmax
+        mean = np.mean(expected_loss)
         accuracy = np.mean(target==argmax)
         return accuracy, state
 
@@ -1028,7 +1031,7 @@ def test_hook(hook_name, print_every):
     expected_loss = []
     state = BatcherState()
     for epoch in range(2):
-        for i in range(100):
+        for i in range(110):
             metric, state = gen_func()
             expected_loss.append(metric)
             lower, upper, m, n = hook.at_end_of_iter_event(state)
@@ -1251,9 +1254,10 @@ def test_spacy_tokenization(spacy_func, class_value):
     with open(get_test_data_path_dict()['snli']) as f:
         tokenized_sents = {'input' : [], 'support' : []}
         for line in f:
+            line = line.decode('utf-8')
             inp, sup, t = json.loads(line)
-            tokenized_sents['input'].append([ spacy_func(token) for token in nlp(unicode(inp))])
-            tokenized_sents['support'].append([ spacy_func(token) for token in nlp(unicode(sup))])
+            tokenized_sents['input'].append([ spacy_func(token) for token in nlp(inp)])
+            tokenized_sents['support'].append([ spacy_func(token) for token in nlp(sup)])
 
     sents_nltk = tokenized_sents['input'] + tokenized_sents['support']
     # 3. test equality

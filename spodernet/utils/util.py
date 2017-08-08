@@ -1,5 +1,5 @@
 from os.path import join
-from scipy.sparse import csr_matrix
+from scipy.sparse import csr_matrix, spmatrix
 
 import h5py
 import os
@@ -55,9 +55,13 @@ def load_data(path):
         return load_dense_hdf(path)
 
 def save_data(path, data):
-    nonzero = np.count_nonzero(data)
-    zero = data.size - nonzero
     assert data.size > 0
+    is_sparse = isinstance(data, spmatrix)
+    if is_sparse:
+        save_sparse_hdf(path, data)
+        return
+
+    zero = (data == 0.0).sum()
     percent = zero/float(data.size)
     if percent > 0.5:
         save_sparse_hdf(path, data)

@@ -2,7 +2,7 @@ from os.path import join
 
 import os
 import shutil
-import simplejson as json
+import json
 import zipfile
 import numpy as np
 
@@ -71,7 +71,7 @@ class DatasetStreamer(object):
                             data.append(inputkey2data[output_key])
 
                         yield data
-        except Exception, e:
+        except Exception as e:
             if self.stream_method == StreamMethods.files:
                 for fh in stream_objects:
                     fh.close()
