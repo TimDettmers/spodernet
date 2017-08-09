@@ -13,7 +13,7 @@ setup(
     version = "0.0.1",
     author = "Tim Dettmers",
     author_email = "tim.dettmers@gmail.com",
-    description = ("This spoder evoled to do NLP."),
+    description = ("Preprocessing framework for NLP."),
     license = "MIT",
     keywords = "deep learning NLP",
     url = "http://packages.python.org/spodernet",
@@ -24,4 +24,14 @@ setup(
         "Development Status :: 1 - Alpha",
         "Topic :: Deep Learning",
     ],
+    install_requires=[
+        'pytest',
+        'numpy',
+        'h5py',
+        'nltk',
+        'enum34',
+        'spacy',
+        'sklearn',
+        'future'
+    ]
 )

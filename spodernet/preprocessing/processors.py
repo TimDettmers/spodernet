@@ -557,7 +557,6 @@ class StreamToHDF5(AbstractLoopLevelListOfTokensProcessor):
             for i in range(fractions.size):
                 self.config['paths'].append(self.paths[i])
 
-            print(self.config)
             pickle.dump(self.config, open(join(self.base_path, 'hdf5_config.pkl'), 'wb'), pickle.HIGHEST_PROTOCOL)
 
         return tokens
