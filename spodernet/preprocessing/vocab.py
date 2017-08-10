@@ -4,7 +4,7 @@ import numpy as np
 import os
 import time
 import datetime
-import json
+import pickle
 
 '''This models the vocabulary and token embeddings'''
 
@@ -91,8 +91,8 @@ class Vocab(object):
 
     def save_to_disk(self, name=''):
         log.info('Saving vocab to: {0}'.format(self.path))
-        json.dump([self.token2idx, self.idx2token, self.label2idx,
-            self.idx2label], open(self.path + name, 'w'))
+        pickle.dump([self.token2idx, self.idx2token, self.label2idx,
+            self.idx2label], open(self.path + name, 'wb'))
 
     def load_from_disk(self, name=''):
         if not os.path.exists(self.path + name):
@@ -104,5 +104,5 @@ class Vocab(object):
             log.info('Vocabulary outdated: {0}'.format(self.path + name))
             return False
         log.info('Loading vocab from: {0}'.format(self.path + name))
-        self.token2idx, self.idx2token, self.label2idx, self.idx2label = json.load(open(self.path))
+        self.token2idx, self.idx2token, self.label2idx, self.idx2label = pickle.load(open(self.path, 'rb'))
         return True

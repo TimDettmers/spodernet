@@ -6,7 +6,7 @@ import uuid
 import os
 import nltk
 import pytest
-import simplejson as json
+import json
 import numpy as np
 import shutil
 import itertools
@@ -998,6 +998,7 @@ def test_hook(hook_name, print_every):
     def calc_confidence_interval(expected_loss):
         assert len(expected_loss) > 0
         mean = np.mean(expected_loss)
+        print(expected_loss, mean)
         std = np.std(expected_loss)
         z = scipy.stats.norm.ppf(0.99)
         se = z*std/np.sqrt(print_every)
@@ -1031,7 +1032,7 @@ def test_hook(hook_name, print_every):
     expected_loss = []
     state = BatcherState()
     for epoch in range(2):
-        for i in range(110):
+        for i in range(113):
             metric, state = gen_func()
             expected_loss.append(metric)
             lower, upper, m, n = hook.at_end_of_iter_event(state)
@@ -1254,7 +1255,6 @@ def test_spacy_tokenization(spacy_func, class_value):
     with open(get_test_data_path_dict()['snli']) as f:
         tokenized_sents = {'input' : [], 'support' : []}
         for line in f:
-            line = line.decode('utf-8')
             inp, sup, t = json.loads(line)
             tokenized_sents['input'].append([ spacy_func(token) for token in nlp(inp)])
             tokenized_sents['support'].append([ spacy_func(token) for token in nlp(sup)])
