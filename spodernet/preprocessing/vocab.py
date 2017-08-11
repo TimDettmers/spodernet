@@ -107,12 +107,13 @@ class Vocab(object):
         timestamp = time.ctime(os.path.getmtime(self.path + name))
         timestamp = datetime.datetime.strptime(timestamp, '%a %b %d %H:%M:%S %Y')
         age_in_hours = (datetime.datetime.now() - timestamp).seconds/60./60.
+        log.info('Loading vocab from: {0}'.format(self.path + name))
+        self.token2idx, self.idx2token, self.label2idx, self.idx2label = pickle.load(open(self.path, 'rb'))
         if age_in_hours > 12:
             log.info('Vocabulary outdated: {0}'.format(self.path + name))
             return False
-        log.info('Loading vocab from: {0}'.format(self.path + name))
-        self.token2idx, self.idx2token, self.label2idx, self.idx2label = pickle.load(open(self.path, 'rb'))
-        return True
+        else:
+            return True
 
     def download_glove(self):
         if not os.path.exists(join(get_data_path(), 'glove')):
@@ -121,14 +122,14 @@ class Vocab(object):
             bashmagic.wget("http://nlp.stanford.edu/data/glove.6B.zip", join(get_data_path(),'glove'))
             bashmagic.unzip(join(get_data_path(), 'glove', 'glove.6B.zip'), join(get_data_path(), 'glove'))
 
-    def prepare_glove(self):
-        if not os.path.exists(join(get_data_path(), 'glove', 'index.p')):
-            index = {}
+    def prepare_glove(self, dimension):
+        if not os.path.exists(join(get_data_path(), 'glove', 'index_50.p')):
             dims = [50, 100, 200, 300]
             base_filename = 'glove.6B.{0}d.txt'
             paths = [join(get_data_path(), 'glove', base_filename.format(dim)) for dim in dims]
             for path, dim in zip(paths, dims):
-                index[str(dim)] = {'PATH' : path}
+                index = {}
+                index = {'PATH' : path}
                 with open(path) as f:
                     log.info('Building index for {0}', path)
                     while True:
@@ -138,26 +139,26 @@ class Vocab(object):
                         next_pos = f.tell()
                         data = line.strip().split(' ')
                         token = data[0]
-                        index[str(dim)][token] = (prev_pos, next_pos)
+                        index[token] = (prev_pos, next_pos)
 
-            log.info('Saving glove index...')
-            json.dump(index, open(join(get_data_path(), 'glove', 'index.p'), 'wb'))
-        else:
-            log.info('Loading glove index...')
-            index = json.load(open(join(get_data_path(), 'glove', 'index.p'), 'rb'))
+                log.info('Saving glove index...')
+                json.dump(index, open(join(get_data_path(), 'glove', 'index_{0}.p'.format(dim)), 'wb'))
+
+        log.info('Loading glove index...')
+        index = json.load(open(join(get_data_path(), 'glove', 'index_{0}.p'.format(dimension)), 'rb'))
 
         return index
 
     def load_matrix(self, index, dim):
-        p = index[str(dim)]['PATH']
+        p = index['PATH']
         log.info('Initializing glove matrix...')
         X = np.zeros((len(self.token2idx), dim), dtype=np.float32)
         log.info('Loading vectors into glove matrix with dimension: {0}', X.shape)
         with open(p) as f:
             for i, (token, idx) in enumerate(self.token2idx.items()):
                 if i % 10000 == 0: print(i)
-                if token in index[str(dim)]:
-                    start, end = index[str(dim)][token]
+                if token in index:
+                    start, end = index[token]
                     f.seek(start)
                     line = f.read(end-start)
                     data = line.strip().split(' ')
@@ -169,7 +170,7 @@ class Vocab(object):
     def get_glove_matrix(self, dimension):
         assert dimension in [50, 100, 200, 300], 'Dimension not supported! Only dimension 50, 100, 200, and 300 are supported!'
         self.download_glove()
-        index = self.prepare_glove()
+        index = self.prepare_glove(dimension)
         return self.load_matrix(index, dimension)
 
 
