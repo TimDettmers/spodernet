@@ -5,11 +5,18 @@ import os
 import time
 import datetime
 import pickle
+import urllib
+import bashmagic
+import time
+import json
 
-'''This models the vocabulary and token embeddings'''
+from spodernet.utils.util import get_data_path, save_data
+from os.path import join
 
 from spodernet.utils.util import Logger
 log = Logger('vocab.py.txt')
+
+'''This models the vocabulary and token embeddings'''
 
 class Vocab(object):
     '''Class that manages work/char embeddings'''
@@ -106,3 +113,65 @@ class Vocab(object):
         log.info('Loading vocab from: {0}'.format(self.path + name))
         self.token2idx, self.idx2token, self.label2idx, self.idx2label = pickle.load(open(self.path, 'rb'))
         return True
+
+    def download_glove(self):
+        if not os.path.exists(join(get_data_path(), 'glove')):
+            log.info('Glove data is missing, dowloading data now...')
+            os.mkdir(join(get_data_path(), 'glove'))
+            bashmagic.wget("http://nlp.stanford.edu/data/glove.6B.zip", join(get_data_path(),'glove'))
+            bashmagic.unzip(join(get_data_path(), 'glove', 'glove.6B.zip'), join(get_data_path(), 'glove'))
+
+    def prepare_glove(self):
+        if not os.path.exists(join(get_data_path(), 'glove', 'index.p')):
+            index = {}
+            dims = [50, 100, 200, 300]
+            base_filename = 'glove.6B.{0}d.txt'
+            paths = [join(get_data_path(), 'glove', base_filename.format(dim)) for dim in dims]
+            for path, dim in zip(paths, dims):
+                index[str(dim)] = {'PATH' : path}
+                with open(path) as f:
+                    log.info('Building index for {0}', path)
+                    while True:
+                        prev_pos = f.tell()
+                        line = f.readline()
+                        if line == '': break
+                        next_pos = f.tell()
+                        data = line.strip().split(' ')
+                        token = data[0]
+                        index[str(dim)][token] = (prev_pos, next_pos)
+
+            log.info('Saving glove index...')
+            json.dump(index, open(join(get_data_path(), 'glove', 'index.p'), 'wb'))
+        else:
+            log.info('Loading glove index...')
+            index = json.load(open(join(get_data_path(), 'glove', 'index.p'), 'rb'))
+
+        return index
+
+    def load_matrix(self, index, dim):
+        p = index[str(dim)]['PATH']
+        log.info('Initializing glove matrix...')
+        X = np.zeros((len(self.token2idx), dim), dtype=np.float32)
+        log.info('Loading vectors into glove matrix with dimension: {0}', X.shape)
+        with open(p) as f:
+            for i, (token, idx) in enumerate(self.token2idx.items()):
+                if i % 10000 == 0: print(i)
+                if token in index[str(dim)]:
+                    start, end = index[str(dim)][token]
+                    f.seek(start)
+                    line = f.read(end-start)
+                    data = line.strip().split(' ')
+                    vec = data[1:]
+                    X[idx] = vec
+        return X
+
+
+    def get_glove_matrix(self, dimension):
+        assert dimension in [50, 100, 200, 300], 'Dimension not supported! Only dimension 50, 100, 200, and 300 are supported!'
+        self.download_glove()
+        index = self.prepare_glove()
+        return self.load_matrix(index, dimension)
+
+
+
+
