@@ -10,7 +10,7 @@ import bashmagic
 import time
 import json
 
-from spodernet.utils.util import get_data_path, save_data
+from spodernet.utils.util import get_data_path, save_data, xavier_uniform_weight
 from os.path import join
 
 from spodernet.utils.util import Logger
@@ -149,11 +149,14 @@ class Vocab(object):
 
         return index
 
+
     def load_matrix(self, index, dim):
         p = index['PATH']
         log.info('Initializing glove matrix...')
-        X = np.zeros((len(self.token2idx), dim), dtype=np.float32)
+        X = xavier_uniform_weight(len(self.token2idx), dim)
         log.info('Loading vectors into glove matrix with dimension: {0}', X.shape)
+        pretrained_count = 0
+        n = len(self.token2idx)-2
         with open(p) as f:
             for i, (token, idx) in enumerate(self.token2idx.items()):
                 if i % 10000 == 0: print(i)
@@ -164,6 +167,8 @@ class Vocab(object):
                     data = line.strip().split(' ')
                     vec = data[1:]
                     X[idx] = vec
+                    pretrained_count += 1
+        log.info('Filled matrix with {0} pretrained embeddings and {1} xavier uniform initialized embeddings.', pretrained_count, n-pretrained_count)
         return X
 
 

@@ -10,6 +10,8 @@ import numpy as np
 from spodernet.utils.logger import Logger
 log = Logger('util.py.txt')
 
+rdm = np.random.RandomState(2345235)
+
 def save_dense_hdf(path, data):
     '''Writes a numpy array to a hdf5 file under the given path.'''
     log.debug_once('Saving hdf5 file to: {0}', path)
@@ -88,6 +90,55 @@ def make_dirs_if_not_exists(path):
     if not os.path.exists(path):
         os.makedirs(path)
 
+# taken from pytorch; gain parameter is omitted
+def xavier_uniform_weight(fan_in, fan_out):
+    std = np.sqrt(2.0 / (fan_in + fan_out))
+    a = np.sqrt(3.0) * std
+    return np.float32(rdm.uniform(-a, a, size=(fan_in, fan_out)))
+
+def embedding_sequence2text(vocab, embedding, break_at_0=True):
+    emb = embedding.data.cpu().numpy()
+    sentences = []
+    for row in emb:
+        sentence_array = []
+        for idx in row:
+            if idx == 0: break
+            sentence_array.append(vocab.get_word(idx))
+        sentences.append(sentence_array)
+    return sentences
+
+class PercentileRejecter(object):
+
+    def __init__(self, above_percentile_threshold):
+        self.values = []
+        self.percentile_threshold = above_percentile_threshold
+        self.threshold_value = 0
+        self.current_iter = 0
+        self.compute_every = 1
+
+    def above_percentile(self, value, percentile=None):
+        self.values.append(value)
+        self.current_iter += 1
+        if len(self.values) < 20:
+            return False
+        else:
+            if percentile is None:
+                if self.current_iter % self.compute_every == 0:
+                    p = np.percentile(self.values, self.percentile_threshold)
+                    if p*1.05 < self.threshold_value or p*0.95 > self.threshold_value:
+                        self.threshold_value = p
+                        self.compute_every -= 1
+                        if self.compute_every < 1: self.compute_every = 1
+                    else:
+                        self.compute_every += 1
+                else:
+                    p = self.threshold_value
+            else:
+                p = np.percentile(self.values, percentile)
+                self.threshold_value = p
+            return value > p
+
+
 class Timer(object):
     def __init__(self, silent=False):
         self.cumulative_secs = {}
@@ -117,3 +168,4 @@ class Timer(object):
         self.current_ticks.pop(name, None)
 
         return value
+

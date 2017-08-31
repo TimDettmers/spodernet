@@ -26,6 +26,7 @@ class Config:
     optimizer = 'adam'
     learning_rate_decay = 1.0
     label_smoothing_epsilon = 0.1
+    epochs = 1000
 
     @staticmethod
     def parse_argv(argv):
@@ -77,6 +78,7 @@ params2type['feature_map_dropout'] = lambda x: float(x)
 params2type['use_conv_transpose'] = lambda x: x.lower() == 'true' or x == '1'
 params2type['use_bias'] = lambda x: x.lower() == 'true' or x == '1'
 params2type['optimizer'] = lambda x: x
+params2type['epochs'] = lambda x: int(x)
 
 alias2params = {}
 alias2params['lr'] = 'learning_rate'
@@ -106,5 +108,6 @@ params2field['use_conv_transpose'] = lambda x: setattr(Config, 'use_conv_transpo
 params2field['use_bias'] = lambda x: setattr(Config, 'use_bias', x)
 params2field['optimizer'] = lambda x: setattr(Config, 'optimizer', x)
 params2field['label_smoothing_epsilon'] = lambda x: setattr(Config, 'label_smoothing_epsilon', x)
+params2field['epochs'] = lambda x: setattr(Config, 'epochs', x)
 
 
