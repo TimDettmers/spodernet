@@ -26,10 +26,12 @@ class Vocab(object):
         Args:
             vocab: Counter object with vocabulary.
         '''
+        self.index = None
         token2idx = {}
         idx2token = {}
         self.label2idx = {}
         self.idx2label = {}
+        self.glove_cache = {}
         for i, item in enumerate(vocab.items()):
             token2idx[item[0]] = i+1
             idx2token[i+1] = item[0]
@@ -123,6 +125,7 @@ class Vocab(object):
             bashmagic.unzip(join(get_data_path(), 'glove', 'glove.6B.zip'), join(get_data_path(), 'glove'))
 
     def prepare_glove(self, dimension):
+        if self.index is not None: return
         if not os.path.exists(join(get_data_path(), 'glove', 'index_50.p')):
             dims = [50, 100, 200, 300]
             base_filename = 'glove.6B.{0}d.txt'
@@ -145,31 +148,52 @@ class Vocab(object):
                 json.dump(index, open(join(get_data_path(), 'glove', 'index_{0}.p'.format(dim)), 'wb'))
 
         log.info('Loading glove index...')
-        index = json.load(open(join(get_data_path(), 'glove', 'index_{0}.p'.format(dimension)), 'rb'))
-
-        return index
+        self.index = json.load(open(join(get_data_path(), 'glove', 'index_{0}.p'.format(dimension)), 'rb'))
 
 
     def load_matrix(self, index, dim):
-        p = index['PATH']
         log.info('Initializing glove matrix...')
         X = xavier_uniform_weight(len(self.token2idx), dim)
         log.info('Loading vectors into glove matrix with dimension: {0}', X.shape)
         pretrained_count = 0
         n = len(self.token2idx)-2
-        with open(p) as f:
-            for i, (token, idx) in enumerate(self.token2idx.items()):
-                if i % 10000 == 0: print(i)
-                if token in index:
-                    start, end = index[token]
-                    f.seek(start)
-                    line = f.read(end-start)
-                    data = line.strip().split(' ')
-                    vec = data[1:]
-                    X[idx] = vec
-                    pretrained_count += 1
+        for i, (token, idx) in enumerate(self.token2idx.items()):
+            if i % 10000 == 0: print(i)
+            vec = self.get_glove_list(token, dim)
+            if vec is not None:
+                X[idx] = vec
         log.info('Filled matrix with {0} pretrained embeddings and {1} xavier uniform initialized embeddings.', pretrained_count, n-pretrained_count)
         return X
+
+    def get_glove_vector(self, token, dimension=300):
+        if token in self.glove_cache: return self.glove_cache[token]
+        vec = self.get_glove_list(token, dimension)
+        if vec is not None:
+            arr = np.array(vec, dtype=np.float32)
+            self.glove_cache[token] = arr
+            return arr
+        else: return None
+
+    def get_glove_list(self, token, dimension=300):
+        assert dimension in [50, 100, 200, 300], 'Dimension not supported! Only dimension 50, 100, 200, and 300 are supported!'
+        self.download_glove()
+        self.prepare_glove(dimension)
+        vec = None
+        if token in self.index:
+            p = self.index['PATH']
+            with open(p) as f:
+                start, end = self.index[token]
+                f.seek(start)
+                line = f.read(end-start)
+                data = line.strip().split(' ')
+                vec = data[1:]
+
+        return vec
+
+    def exists_in_glove(self, token, dimension=300):
+        self.download_glove()
+        self.prepare_glove(dimension)
+        return token in self.index
 
 
     def get_glove_matrix(self, dimension):
@@ -177,7 +201,3 @@ class Vocab(object):
         self.download_glove()
         index = self.prepare_glove(dimension)
         return self.load_matrix(index, dimension)
-
-
-
-

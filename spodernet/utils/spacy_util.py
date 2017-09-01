@@ -1,5 +1,8 @@
 import spacy
 
+subjects = set(['nsubj'])
+objects = set(['dobj', 'pobj'])
+
 def merge_noun_phrases(sent_doc):
     for np in sent_doc.noun_chunks:
        np.merge(np.root.tag_, np.text, np.root.ent_type_)
@@ -44,7 +47,7 @@ def merge_with_set(sent_doc, to_match, write_key='pobj'):
                     i += span_length-1
             i += 1
 
-def merge_token(sent_doc):
+def merge_tokens(sent_doc):
     merge_noun_phrases(sent_doc)
     merge_entities(sent_doc)
     merge_verbs(sent_doc)
