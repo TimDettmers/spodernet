@@ -6,6 +6,7 @@ import os
 import time
 import os
 import numpy as np
+import torch
 
 from spodernet.utils.logger import Logger
 log = Logger('util.py.txt')
@@ -97,7 +98,13 @@ def xavier_uniform_weight(fan_in, fan_out):
     return np.float32(rdm.uniform(-a, a, size=(fan_in, fan_out)))
 
 def embedding_sequence2text(vocab, embedding, break_at_0=True):
-    emb = embedding.data.cpu().numpy()
+    if not isinstance(embedding, np.ndarray):
+        if isinstance(embedding, torch.autograd.Variable):
+            emb = embedding.data.cpu().numpy()
+        else:
+            emb = embedding.cpu().numpy()
+    else:
+        emb = embedding
     sentences = []
     for row in emb:
         sentence_array = []
