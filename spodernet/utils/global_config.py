@@ -27,6 +27,9 @@ class Config:
     learning_rate_decay = 1.0
     label_smoothing_epsilon = 0.1
     epochs = 1000
+    dataset = None
+    process = False
+    model_name = None
 
     @staticmethod
     def parse_argv(argv):
@@ -79,6 +82,9 @@ params2type['use_conv_transpose'] = lambda x: x.lower() == 'true' or x == '1'
 params2type['use_bias'] = lambda x: x.lower() == 'true' or x == '1'
 params2type['optimizer'] = lambda x: x
 params2type['epochs'] = lambda x: int(x)
+params2type['dataset'] = lambda x: x
+params2type['model_name'] = lambda x: x
+params2type['process'] = lambda x: x.lower() == 'true' or x == '1'
 
 alias2params = {}
 alias2params['lr'] = 'learning_rate'
@@ -91,6 +97,7 @@ alias2params['bias'] = 'use_bias'
 alias2params['conv_trans'] = 'use_conv_transpose'
 alias2params['opt'] = 'optimizer'
 alias2params['label_smoothing'] = 'label_smoothing_epsilon'
+alias2params['model'] = 'model_name'
 
 
 
@@ -109,5 +116,8 @@ params2field['use_bias'] = lambda x: setattr(Config, 'use_bias', x)
 params2field['optimizer'] = lambda x: setattr(Config, 'optimizer', x)
 params2field['label_smoothing_epsilon'] = lambda x: setattr(Config, 'label_smoothing_epsilon', x)
 params2field['epochs'] = lambda x: setattr(Config, 'epochs', x)
+params2field['dataset'] = lambda x: setattr(Config, 'dataset', x)
+params2field['process'] = lambda x: setattr(Config, 'process', x)
+params2field['model_name'] = lambda x: setattr(Config, 'model_name', x)
 
 
