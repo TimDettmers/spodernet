@@ -133,11 +133,11 @@ class Vocab(object):
             for path, dim in zip(paths, dims):
                 index = {}
                 index = {'PATH' : path}
-                with open(path) as f:
+                with open(path, 'rb') as f:
                     log.info('Building index for {0}', path)
                     while True:
                         prev_pos = f.tell()
-                        line = f.readline()
+                        line = f.readline().decode('utf-8')
                         if line == '': break
                         next_pos = f.tell()
                         data = line.strip().split(' ')
@@ -145,13 +145,13 @@ class Vocab(object):
                         index[token] = (prev_pos, next_pos)
 
                 log.info('Saving glove index...')
-                json.dump(index, open(join(get_data_path(), 'glove', 'index_{0}.p'.format(dim)), 'wb'))
+                json.dump(index, open(join(get_data_path(), 'glove', 'index_{0}.p'.format(dim)), 'w'))
 
         log.info('Loading glove index...')
-        self.index = json.load(open(join(get_data_path(), 'glove', 'index_{0}.p'.format(dimension)), 'rb'))
+        self.index = json.load(open(join(get_data_path(), 'glove', 'index_{0}.p'.format(dimension)), 'r'))
 
 
-    def load_matrix(self, index, dim):
+    def load_matrix(self, dim):
         log.info('Initializing glove matrix...')
         X = xavier_uniform_weight(len(self.token2idx), dim)
         log.info('Loading vectors into glove matrix with dimension: {0}', X.shape)
@@ -162,6 +162,7 @@ class Vocab(object):
             vec = self.get_glove_list(token, dim)
             if vec is not None:
                 X[idx] = vec
+                pretrained_count += 1
         log.info('Filled matrix with {0} pretrained embeddings and {1} xavier uniform initialized embeddings.', pretrained_count, n-pretrained_count)
         return X
 
@@ -181,10 +182,10 @@ class Vocab(object):
         vec = None
         if token in self.index:
             p = self.index['PATH']
-            with open(p) as f:
+            with open(p, 'rb') as f:
                 start, end = self.index[token]
                 f.seek(start)
-                line = f.read(end-start)
+                line = f.read(end-start).decode('utf-8')
                 data = line.strip().split(' ')
                 vec = data[1:]
 
@@ -199,5 +200,4 @@ class Vocab(object):
     def get_glove_matrix(self, dimension):
         assert dimension in [50, 100, 200, 300], 'Dimension not supported! Only dimension 50, 100, 200, and 300 are supported!'
         self.download_glove()
-        index = self.prepare_glove(dimension)
-        return self.load_matrix(index, dimension)
+        return self.load_matrix(dimension)

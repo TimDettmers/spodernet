@@ -1,7 +1,7 @@
 from future import standard_library
 standard_library.install_aliases()
 
-from os.path import join
+from os.path import join, exists
 import threading
 from collections import namedtuple
 
@@ -184,6 +184,8 @@ class DataLoaderSlave(threading.Thread):
 class StreamBatcher(object):
     def __init__(self, pipeline_name, name, batch_size, loader_threads=4, randomize=False, seed=None, keys=['input', 'support', 'target'], is_volatile=False):
         config_path = join(get_data_path(), pipeline_name, name, 'hdf5_config.pkl')
+        if not exists(config_path):
+            log.error('Path {0} does not exists! Have you forgotten to preprocess your dataset?', config_path)
         config = pickle.load(open(config_path, 'rb'))
         self.paths = config['paths']
         self.fractions = config['fractions']

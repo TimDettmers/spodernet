@@ -170,6 +170,30 @@ class LossHook(AbstractHook):
         else:
             return state.loss
 
+
+class IntersectionHook(AbstractHook):
+    def __init__(self, name='', print_every_x_batches=1000):
+        super(IntersectionHook, self).__init__(name, 'Intersection', print_every_x_batches)
+
+    def calculate_metric(self, state):
+        state = self.convert_state(state)
+        preds = state.pred
+        targets = state.targets
+        if Config.cuda:
+            preds = preds.cpu()
+            targets = targets.cpu()
+
+        preds = preds.numpy()
+        targets = targets.numpy()
+        n = targets.size
+        k = 0
+        for row in range(Config.batch_size):
+            k += np.intersect1d(preds[row], targets[row]).size
+
+        return k/float(n)
+
+
+
 class ETAHook(AbstractHook, IAtEpochStartObservable):
     def __init__(self, name='', print_every_x_batches=1000):
         super(ETAHook, self).__init__(name, 'ETA', print_every_x_batches)
