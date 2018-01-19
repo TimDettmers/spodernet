@@ -41,10 +41,11 @@ class BatcherState(object):
 
 
 class DataLoaderSlave(threading.Thread):
-    def __init__(self, stream_batcher, batchidx2paths, batchidx2start_end, randomize=False, paths=None, shard2batchidx=None, seed=None, shard_fractions=None):
+    def __init__(self, stream_batcher, batchidx2paths, batchidx2start_end, randomize=False, paths=None, shard2batchidx=None, seed=None, shard_fractions=None, cache_size_GB=4):
         super(DataLoaderSlave, self).__init__()
         if randomize:
             assert seed is not None, 'For randomized data loading a seed needs to be set!'
+        self.cache_size_GB = cache_size_GB
         self.stream_batcher = stream_batcher
         self.batchidx2paths = batchidx2paths
         self.batchidx2start_end = batchidx2start_end
@@ -59,6 +60,7 @@ class DataLoaderSlave(threading.Thread):
         self.daemon = True
         self.t = Timer()
         self.batches_processes = 0
+        self.cache_order = []
 
     def stop(self):
         self._stop.set()
@@ -73,13 +75,14 @@ class DataLoaderSlave(threading.Thread):
                 for path in paths:
                     if path not in self.current_data:
                         data = load_data(path)
+                        self.cache_order.append(path)
                         if shuffle_idx == None and self.randomize:
                             shuffle_idx = np.arange(data.shape[0])
                             self.rdm.shuffle(shuffle_idx)
 
                         if self.randomize:
                             data = data[shuffle_idx]
-                        self.current_data[path] = load_data(path)
+                        self.current_data[path] = data
 
                 shuffle_idx = None
         else:
@@ -87,6 +90,7 @@ class DataLoaderSlave(threading.Thread):
             for path in current_paths:
                 if path not in self.current_data:
                     data = load_data(path)
+                    self.cache_order.append(path)
                     if shuffle_idx is None and self.randomize:
                         shuffle_idx = np.arange(data.shape[0])
                         self.rdm.shuffle(shuffle_idx)
@@ -116,15 +120,20 @@ class DataLoaderSlave(threading.Thread):
 
         return batch_parts
 
+    def determine_cache_size(self):
+        total_bytes = 0
+        for path, shard in self.current_data.items():
+            total_bytes += shard.nbytes
+        return total_bytes/(1024.0**3.0)
+
     def clean_cache(self, current_paths):
         # delete unused cached data
-        if isinstance(current_paths[0], list):
-            current_paths = current_paths[0] + current_paths[1]
-
-
-        for old_path in list(self.current_data.keys()):
-            if old_path not in current_paths:
-                self.current_data.pop(old_path, None)
+        for i in range(len(self.cache_order)):
+            if self.cache_order[i] in current_paths: continue
+            path = self.cache_order.pop(i)
+            self.current_data.pop(path, None)
+            GB_usage = self.determine_cache_size()
+            if GB_usage < self.cache_size_GB: break
 
     def publish_at_prepared_batch_event(self, batch_parts):
         for i, obs in enumerate(self.stream_batcher.at_batch_prepared_observers):
@@ -145,12 +154,14 @@ class DataLoaderSlave(threading.Thread):
                 continue
 
             if self.randomize:
-                shard_idx = self.rdm.choice(len(list(self.shard2batchidx.keys())), 1, p=self.shard_fractions)[0]
-                current_paths = self.paths[shard_idx]
+                n = 0
+                while (n - self.stream_batcher.batch_size + 1) <= 0:
+                    shard_idx = self.rdm.choice(len(list(self.shard2batchidx.keys())), 1, p=self.shard_fractions)[0]
+                    current_paths = self.paths[shard_idx]
 
-                self.load_files_if_needed(current_paths)
+                    self.load_files_if_needed(current_paths)
 
-                n = self.current_data[current_paths[0]].shape[0]
+                    n = self.current_data[current_paths[0]].shape[0]
                 start = self.rdm.randint(0, n-self.stream_batcher.batch_size+1)
                 end = start + self.stream_batcher.batch_size
 
@@ -173,7 +184,9 @@ class DataLoaderSlave(threading.Thread):
             except:
                 continue
 
-            self.clean_cache(current_paths)
+            GB_usage = self.determine_cache_size()
+            if GB_usage > self.cache_size_GB:
+                self.clean_cache(current_paths)
             self.batches_processes += 1
             if self.batches_processes % 100 == 0:
                 if benchmark:
@@ -182,7 +195,7 @@ class DataLoaderSlave(threading.Thread):
 
 
 class StreamBatcher(object):
-    def __init__(self, pipeline_name, name, batch_size, loader_threads=4, randomize=False, seed=None, keys=['input', 'support', 'target'], is_volatile=False):
+    def __init__(self, pipeline_name, name, batch_size, loader_threads=4, randomize=False, seed=None, keys=['input', 'support', 'target'], is_volatile=False, cache_size_GB=4):
         config_path = join(get_data_path(), pipeline_name, name, 'hdf5_config.pkl')
         if not exists(config_path):
             log.error('Path {0} does not exists! Have you forgotten to preprocess your dataset?', config_path)
@@ -230,7 +243,7 @@ class StreamBatcher(object):
 
         for i in range(loader_threads):
             seed = 2345 + (i*83)
-            self.loaders.append(DataLoaderSlave(self, batchidx2paths, batchidx2start_end, randomize, self.paths, shard2batchidx, seed, self.fractions))
+            self.loaders.append(DataLoaderSlave(self, batchidx2paths, batchidx2start_end, randomize, self.paths, shard2batchidx, seed, self.fractions, cache_size_GB))
             self.loaders[-1].start()
 
 
