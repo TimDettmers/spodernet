@@ -131,11 +131,13 @@ class DataLoaderSlave(threading.Thread):
         i = 0
         n = len(self.cache_order)
         while i < n:
-            if self.cache_order[i] in current_paths: continue
+            if self.cache_order[i] in current_paths:
+                i += 1
+                continue
             path = self.cache_order.pop(i)
-            n -= 1
             self.current_data.pop(path, None)
             GB_usage = self.determine_cache_size()
+            n -= 1
             if GB_usage < self.cache_size_GB: break
 
     def publish_at_prepared_batch_event(self, batch_parts):
