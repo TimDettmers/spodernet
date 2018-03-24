@@ -128,9 +128,12 @@ class DataLoaderSlave(threading.Thread):
 
     def clean_cache(self, current_paths):
         # delete unused cached data
-        for i in range(len(self.cache_order)):
+        i = 0
+        n = len(self.cache_order)
+        while i < n:
             if self.cache_order[i] in current_paths: continue
             path = self.cache_order.pop(i)
+            n -= 1
             self.current_data.pop(path, None)
             GB_usage = self.determine_cache_size()
             if GB_usage < self.cache_size_GB: break

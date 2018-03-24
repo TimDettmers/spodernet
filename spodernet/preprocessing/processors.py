@@ -295,7 +295,7 @@ class NERTokenizer(AbstractProcessor):
         self.execution_state = set(['transform'])
 
     def process(self, sentence, inp_type):
-        return [token.ent_type_ for token in nlp(sentence, parse=False, entity=True, tag=True)]
+        return [token.ent_type_ for token in nlp(sentence, disable=['parse'])]
 
 class DependencyParser(AbstractProcessor):
     def __init__(self):
@@ -303,7 +303,7 @@ class DependencyParser(AbstractProcessor):
         self.execution_state = set(['transform'])
 
     def process(self, sentence, inp_type):
-        return [token.dep_ for token in nlp(sentence, parse=True, entity=True, tag=True)]
+        return [token.dep_ for token in nlp(sentence)]
 
 class POSTokenizer(AbstractProcessor):
     def __init__(self):
@@ -311,14 +311,14 @@ class POSTokenizer(AbstractProcessor):
         self.execution_state = set(['transform'])
 
     def process(self, sentence, inp_type):
-        return [token.pos_ for token in nlp(sentence, parse=False, entity=False, tag=True)]
+        return [token.pos_ for token in nlp(sentence, disable=['parse, entity'])]
 
 class SentTokenizer(AbstractProcessor):
     def __init__(self):
         super(SentTokenizer, self).__init__()
 
     def process(self, sentence, inp_type):
-        return [sent.text.replace('\n', '') for sent in nlp(sentence, tag=True, parse=True, entity=False).sents]
+        return [sent.text.replace('\n', '') for sent in nlp(sentence, disable=['entity']).sents]
 
 class CustomTokenizer(AbstractProcessor):
     def __init__(self, tokenizer_method):

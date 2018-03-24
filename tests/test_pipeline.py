@@ -37,6 +37,7 @@ Config.backend = Backends.TEST
 
 def get_test_data_path_dict():
     paths = {}
+    paths['snli10'] = './tests/test_data/snli10.json'
     paths['snli'] = './tests/test_data/snli.json'
     paths['snli3k'] = './tests/test_data/snli_3k.json'
     paths['snli1k'] = './tests/test_data/snli_1k.json'
@@ -1239,7 +1240,7 @@ ids = ['NER', 'POS', 'DEP']
 def test_spacy_tokenization(spacy_func, class_value):
     nlp = spacy.load('en')
     s = DatasetStreamer()
-    s.set_path(get_test_data_path_dict()['snli'])
+    s.set_path(get_test_data_path_dict()['snli10'])
     s.add_stream_processor(JsonLoaderProcessors())
     # 1. setup pipeline
     p = Pipeline('test_pipeline')
@@ -1252,7 +1253,7 @@ def test_spacy_tokenization(spacy_func, class_value):
     sents = inp_sents + sup_sents
 
     # 2. setup nltk tokenization
-    with open(get_test_data_path_dict()['snli']) as f:
+    with open(get_test_data_path_dict()['snli10']) as f:
         tokenized_sents = {'input' : [], 'support' : []}
         for line in f:
             inp, sup, t = json.loads(line)
