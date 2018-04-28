@@ -166,7 +166,7 @@ class LossHook(AbstractHook):
     def calculate_metric(self, state):
         if Config.backend == Backends.TORCH:
             state = self.convert_state(state)
-            return state.loss.item()
+            return state.loss[0]
         else:
             return state.loss
 
