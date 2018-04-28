@@ -74,31 +74,42 @@ class DataLoaderSlave(threading.Thread):
                 shuffle_idx = None
                 for path in paths:
                     if path not in self.current_data:
-                        data = load_data(path)
+                        ordered_data = load_data(path)
                         self.cache_order.append(path)
                         if shuffle_idx == None and self.randomize:
-                            shuffle_idx = np.arange(data.shape[0])
+                            shuffle_idx = np.arange(ordered_data.shape[0])
                             self.rdm.shuffle(shuffle_idx)
 
                         if self.randomize:
-                            data = data[shuffle_idx]
-                        self.current_data[path] = data
+                            # be careful with pointers here, or we have trouble
+                            # with garbage collection
+                            data = np.copy(ordered_data[shuffle_idx])
+                            del ordered_data
+                            order_data = None
+                            self.current_data[path] = data
+                        else:
+                            self.current_data[path] = ordered_data
 
                 shuffle_idx = None
         else:
             shuffle_idx = None
             for path in current_paths:
                 if path not in self.current_data:
-                    data = load_data(path)
+                    ordered_data = load_data(path)
                     self.cache_order.append(path)
                     if shuffle_idx is None and self.randomize:
-                        shuffle_idx = np.arange(data.shape[0])
+                        shuffle_idx = np.arange(ordered_data.shape[0])
                         self.rdm.shuffle(shuffle_idx)
 
                     if self.randomize:
-                        data = data[shuffle_idx]
-
-                    self.current_data[path] = data
+                        # be careful with pointers here, or we have trouble
+                        # with garbage collection
+                        data = np.copy(ordered_data[shuffle_idx])
+                        del ordered_data
+                        order_data = None
+                        self.current_data[path] = data
+                    else:
+                        self.current_data[path] = ordered_data
 
     def create_batch_parts(self, current_paths, start, end):
         # index loaded data for minibatch
