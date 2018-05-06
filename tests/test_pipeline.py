@@ -2,6 +2,8 @@ from __future__ import unicode_literals
 from io import StringIO
 from os.path import join
 
+import os
+import psutil
 import uuid
 import os
 import nltk
@@ -1408,3 +1410,88 @@ def test_batch_streaming_pipeline(batch_size):
             np.testing.assert_array_equal(X[idx], str2var['input'], 'Input data not equal!')
             np.testing.assert_array_equal(S[idx], str2var['support'], 'Support data not equal!')
             np.testing.assert_array_equal(T[idx], str2var['target'], 'Target data not equal!')
+
+
+
+
+def test_caching():
+    samples_per_file = 100
+    randomize=True
+    batch_size = 10
+
+    tokenizer = nltk.tokenize.WordPunctTokenizer()
+    data_folder_name = 'snli_test'
+    pipeline_folder = 'test_pipeline'
+    base_path = join(get_data_path(), pipeline_folder, data_folder_name)
+    # clean all data from previous failed tests
+    if os.path.exists(base_path):
+        shutil.rmtree(base_path)
+
+    s = DatasetStreamer()
+    s.set_path(get_test_data_path_dict()['snli1k'])
+    s.add_stream_processor(JsonLoaderProcessors())
+    # 1. Setup pipeline to save lengths and generate vocabulary
+    p = Pipeline(pipeline_folder)
+    p.add_token_processor(AddToVocab())
+    p.add_sent_processor(CustomTokenizer(tokenizer.tokenize))
+    p.add_post_processor(ConvertTokenToIdx())
+    p.add_post_processor(SaveStateToList('idx'))
+    # 2 samples per file -> 50 files
+    streamer = StreamToHDF5(data_folder_name, samples_per_file=samples_per_file, keys=['input', 'support', 'target'])
+    p.add_post_processor(streamer)
+    state = p.execute(s)
+
+    # 2. Load data from the SaveStateToList hook
+    inp_indices = state['data']['idx']['input']
+    sup_indices = state['data']['idx']['support']
+    t_indices = state['data']['idx']['target']
+    max_inp_len = np.max(state['data']['lengths']['input'])
+    max_sup_len = np.max(state['data']['lengths']['support'])
+    # For SNLI the targets consist of single words'
+    assert np.max(state['data']['lengths']['target']) == 1, 'Max index label length should be 1'
+    assert 'counts' in streamer.config, 'counts key not found in config dict!'
+    assert len(streamer.config['counts']) > 0,'Counts of samples per file must be larger than zero (probably no files have been saved)'
+    if samples_per_file == 100000:
+        count = len(streamer.config['counts'])
+        assert count == 1,'Samples per files is 100000 and there should be one file for 1k samples, but there are {0}'.format(count)
+
+    assert streamer.num_samples == 1000, 'There should be 1000 samples for this dataset, but found {1}!'.format(streamer.num_samples)
+
+
+    # 3. parse data to numpy
+    n = len(inp_indices)
+    X = np.zeros((n, max_inp_len), dtype=np.int64)
+    X_len = np.zeros((n), dtype=np.int64)
+    S = np.zeros((n, max_sup_len), dtype=np.int64)
+    S_len = np.zeros((n), dtype=np.int64)
+    T = np.zeros((n, 1), dtype=np.int64)
+
+    for i in range(len(inp_indices)):
+        sample_inp = inp_indices[i][0]
+        sample_sup = sup_indices[i][0]
+        sample_t = t_indices[i][0]
+        l = len(sample_inp)
+        X_len[i] = l
+        X[i, :l] = sample_inp
+
+        l = len(sample_sup)
+        S_len[i] = l
+        S[i, :l] = sample_sup
+
+        T[i] = sample_t[0]
+
+    epochs = 20
+    batcher = StreamBatcher(pipeline_folder, data_folder_name, batch_size, loader_threads=1, randomize=randomize, cache_size_GB=0.0001)
+    del batcher.at_batch_prepared_observers[:]
+    process = psutil.Process(os.getpid())
+    base_mem = process.memory_info().rss
+
+    # 4. test data equality
+    for epoch in range(epochs):
+        for i, (x, x_len, s, s_len, t, t_len, idx) in enumerate(batcher):
+            pass
+        mem = process.memory_info().rss
+        print(mem)
+
+    # 5. clean up
+    shutil.rmtree(base_path)

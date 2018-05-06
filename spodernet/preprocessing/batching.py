@@ -5,6 +5,8 @@ from os.path import join, exists
 import threading
 from collections import namedtuple
 
+import os
+import psutil
 import time
 import datetime
 import numpy as np
@@ -146,7 +148,11 @@ class DataLoaderSlave(threading.Thread):
                 i += 1
                 continue
             path = self.cache_order.pop(i)
-            self.current_data.pop(path, None)
+            process = psutil.Process(os.getpid())
+            mem = process.memory_info().rss
+            data = self.current_data.pop(path, None)
+            del data
+            mem = process.memory_info().rss
             GB_usage = self.determine_cache_size()
             n -= 1
             if GB_usage < self.cache_size_GB: break
