@@ -107,15 +107,22 @@ class AccuracyHook(AbstractHook):
     def __init__(self, name='', print_every_x_batches=1000):
         super(AccuracyHook, self).__init__(name, 'Accuracy', print_every_x_batches)
         self.func = None
+        self.topk = 1
         if Config.backend == Backends.TORCH:
             import torch
             self.func = lambda x: torch.sum(x)
 
     def calculate_metric(self, state):
         if Config.backend == Backends.TORCH:
-            correct = self.func(state.targets==state.argmax)
+            correct = 0.0
+            if len(state.argmax.size()) == 1:
+                correct += self.func(state.targets==state.argmax)
+            else:
+                topk = state.argmax.size(1)
+                for i in range(topk):
+                    correct += self.func(state.targets==state.argmax[:, i])
             n = state.argmax.size()[0]
-            return correct/np.float32(n)
+            return correct.item()/np.float32(n)
         elif Config.backend == Backends.TENSORFLOW:
             n = state.argmax.shape[0]
             return np.sum(state.targets==state.argmax)/np.float32(n)
