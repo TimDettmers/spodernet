@@ -1238,7 +1238,7 @@ test_data = [(lambda x: x.ent_type_, NERTokenizer),
 ids = ['NER', 'POS', 'DEP']
 @pytest.mark.parametrize("spacy_func, class_value", test_data, ids=ids)
 def test_spacy_tokenization(spacy_func, class_value):
-    nlp = spacy.load('en')
+    nlp = spacy.load('en_core_web_sm')
     s = DatasetStreamer()
     s.set_path(get_test_data_path_dict()['snli10'])
     s.add_stream_processor(JsonLoaderProcessors())
