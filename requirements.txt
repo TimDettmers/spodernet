@@ -6,5 +6,5 @@ nltk
 enum34
 simplejson
 spacy
-sklearn
+scikit-learn
 future
